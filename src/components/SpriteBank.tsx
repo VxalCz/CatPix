@@ -1,10 +1,13 @@
 import { useRef, useEffect, useCallback } from 'react'
-import { Package, Trash2, X } from 'lucide-react'
+import { Package, Trash2, X, Copy } from 'lucide-react'
 import type { SpriteEntry } from '../App'
 
 interface SpriteBankProps {
   sprites: SpriteEntry[]
+  editingBankIndex: number | null
   onRemove: (id: string) => void
+  onDuplicate: (id: string) => void
+  onSelectSprite: (index: number) => void
   onOpenExport: () => void
 }
 
@@ -33,7 +36,14 @@ function SpriteThumb({ sprite }: { sprite: SpriteEntry }) {
   )
 }
 
-export function SpriteBank({ sprites, onRemove, onOpenExport }: SpriteBankProps) {
+export function SpriteBank({
+  sprites,
+  editingBankIndex,
+  onRemove,
+  onDuplicate,
+  onSelectSprite,
+  onOpenExport,
+}: SpriteBankProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const prevCount = useRef(sprites.length)
@@ -65,21 +75,42 @@ export function SpriteBank({ sprites, onRemove, onOpenExport }: SpriteBankProps)
             Save tiles from the editor to build your collection
           </span>
         ) : (
-          sprites.map((sprite) => (
+          sprites.map((sprite, idx) => (
             <div
               key={sprite.id}
-              className="relative group shrink-0 border border-border-default rounded p-0.5 hover:border-accent transition-colors"
+              className={`relative group shrink-0 rounded p-0.5 transition-colors cursor-pointer ${
+                editingBankIndex === idx
+                  ? 'border-2 border-accent'
+                  : 'border border-border-default hover:border-accent'
+              }`}
               style={{
                 background: `
                   repeating-conic-gradient(#1a1a2e 0% 25%, #0f0f1e 0% 50%)
                   50% / 8px 8px
                 `,
               }}
-              title={sprite.name}
+              title={`${sprite.name} (click to edit)`}
+              onClick={() => onSelectSprite(idx)}
             >
               <SpriteThumb sprite={sprite} />
+
+              {/* Index badge */}
+              <span className="absolute bottom-0 left-0 bg-black/70 text-[9px] text-text-muted px-1 rounded-tr">
+                {idx}
+              </span>
+
+              {/* Duplicate button */}
               <button
-                onClick={() => onRemove(sprite.id)}
+                onClick={(e) => { e.stopPropagation(); onDuplicate(sprite.id) }}
+                className="absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full bg-accent text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                title="Duplicate"
+              >
+                <Copy size={9} />
+              </button>
+
+              {/* Remove button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); onRemove(sprite.id) }}
                 className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
               >
                 <X size={10} />
