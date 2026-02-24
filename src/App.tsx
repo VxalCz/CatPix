@@ -247,6 +247,25 @@ function App() {
     [sprites],
   )
 
+  const handleAILoadAsTileset = useCallback((imageData: ImageData, tileSize: number) => {
+    setShowAIImportModal(false)
+    setGridSize(tileSize)
+    setSelectedTile(null)
+    setTileData(null)
+    setEditingBankIndex(null)
+
+    // Convert ImageData → canvas → data URL → HTMLImageElement
+    const canvas = document.createElement('canvas')
+    canvas.width = imageData.width
+    canvas.height = imageData.height
+    const ctx = canvas.getContext('2d')!
+    ctx.putImageData(imageData, 0, 0)
+    const dataUrl = canvas.toDataURL('image/png')
+    const img = new window.Image()
+    img.onload = () => setImage(img)
+    img.src = dataUrl
+  }, [])
+
   const handleAIImport = useCallback((tiles: ImageData[]) => {
     setShowAIImportModal(false)
     const newEntries: SpriteEntry[] = tiles.map((tile) => {
@@ -341,6 +360,7 @@ function App() {
         <AIImportModal
           gridSize={gridSize}
           onImport={handleAIImport}
+          onLoadAsTileset={handleAILoadAsTileset}
           onClose={() => setShowAIImportModal(false)}
         />
       )}

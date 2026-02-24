@@ -34,7 +34,9 @@ No test runner is configured.
 All meaningful state lives in `App.tsx`:
 - `image` — the loaded `HTMLImageElement`
 - `gridSize` — tile size in px (8–128, step 8)
+- `tileCountX` / `tileCountY` — how many tiles wide/tall to extract at once (multi-tile selection)
 - `selectedTile` / `tileData` — the tile currently open in the pixel editor
+- `editingBankIndex` — index of the sprite currently loaded from the bank into the editor (`null` if editing from tileset)
 - `sprites: SpriteEntry[]` — the sprite bank collection
 - `activeTool` / `activeColor` — shared editor state passed down to Sidebar and PixelEditor
 
@@ -42,14 +44,16 @@ All meaningful state lives in `App.tsx`:
 
 ```
 App
-├── Sidebar (left, w-52)       — upload, tool picker, color/palette, grid size
+├── Sidebar (left, w-52)       — upload, tool picker, color/palette, grid size, tile count
 ├── TilesetViewer (center)     — zoomable/pannable canvas; click to select tile
 └── Right panel (w-72)
     ├── PropertiesPanel        — image metadata display
-    └── PixelEditor            — 256×256 display canvas for editing; symmetry toggles
-SpriteBank (bottom bar)        — thumbnail strip of saved sprites; export trigger
+    ├── PixelEditor            — 256×256 display canvas for editing; symmetry toggles; onion skin; save/update-in-bank
+    └── AnimationPreview       — flip-book preview of sprites in the bank
+SpriteBank (bottom bar)        — thumbnail strip of saved sprites; select/duplicate/remove; export trigger
 ExportModal (overlay)          — layout options, preview, triggers exportProject()
 AIImportModal (overlay)        — two-step AI sprite import (configure → preview)
+NewProjectModal (overlay)      — create a blank canvas with a chosen tile size
 ```
 
 ### Custom hooks
@@ -62,13 +66,18 @@ AIImportModal (overlay)        — two-step AI sprite import (configure → prev
 
 `AIImportModal` lets users import AI-generated pixel art (512x512+ images where each logical pixel is an NxN block). The pipeline:
 
-1. User uploads an image → `detectScaleFactor()` samples random NxN blocks for candidates [2–16], scores uniformity, returns sorted `{factor, confidence}[]`
-2. User picks scale factor (auto-detected or manual) and configures tile size, sprite layout (tiles wide × tall), optional color quantization
-3. `downscaleNearestNeighbor()` samples center pixel of each NxN block → true pixel resolution
-4. `sliceIntoTiles()` cuts the downscaled image into sprites, optionally skipping empty tiles
-5. Resulting `ImageData[]` is passed to `App.handleAIImport()` which assigns IDs/names via `spriteCounter` and appends to `sprites[]`
+1. User uploads an image → `detectScaleFactor()` samples random NxN blocks for candidates `[2, 3, 4, 6, 8, 10, 12, 16]`, scores uniformity, returns sorted `{factor, confidence}[]`
+2. User picks scale factor (auto-detected or manual), downscale method, tile size, sprite layout (tiles wide × tall), optional color quantization, optional background removal
+3. `downscaleImage()` dispatches to one of three methods:
+   - `'mode'` (`downscaleMode`) — most-frequent-color per block (recommended; handles JPEG artifacts via color bucketing)
+   - `'center'` (`downscaleNearestNeighbor`) — samples center pixel of each block
+   - `'average'` (`downscaleAverage`) — averages all pixels per block
+4. Optional: `quantizeColors()` merges similar colors within a Manhattan-distance threshold
+5. Optional: `detectBackgroundColor()` samples edge pixels → `removeBackgroundColor()` makes matching pixels transparent
+6. `sliceIntoTiles()` cuts the downscaled image into sprites, optionally skipping empty tiles
+7. Resulting `ImageData[]` is passed to `App.handleAIImport()` which assigns IDs/names via `spriteCounter` and appends to `sprites[]`; alternatively `App.handleAILoadAsTileset()` loads the downscaled image as the main tileset
 
-Utility functions live in `src/utils/aiImport.ts`: `detectScaleFactor`, `downscaleNearestNeighbor`, `quantizeColors`, `sliceIntoTiles`, `isEmptyTile`.
+Utility functions live in `src/utils/aiImport.ts`: `detectScaleFactor`, `downscaleImage`, `downscaleNearestNeighbor`, `downscaleMode`, `downscaleAverage`, `quantizeColors`, `detectBackgroundColor`, `removeBackgroundColor`, `sliceIntoTiles`, `isEmptyTile`.
 
 ### Styling
 

@@ -306,6 +306,91 @@ export function sliceIntoTiles(imageData: ImageData, tileW: number, tileH: numbe
 }
 
 /**
+ * Detects the most likely background color by sampling edge pixels.
+ * Samples top/bottom rows and left/right columns, quantizes to buckets,
+ * and returns the most frequent color.
+ */
+export function detectBackgroundColor(imageData: ImageData): { r: number; g: number; b: number; a: number } {
+  const { width, height, data } = imageData
+  const bucket = 8
+  const freq = new Map<string, { count: number; r: number; g: number; b: number; a: number }>()
+
+  function sample(x: number, y: number) {
+    const i = (y * width + x) * 4
+    const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3]
+    const key = `${((r / bucket) | 0)},${((g / bucket) | 0)},${((b / bucket) | 0)},${((a / bucket) | 0)}`
+    const entry = freq.get(key)
+    if (entry) {
+      entry.count++
+      entry.r += r
+      entry.g += g
+      entry.b += b
+      entry.a += a
+    } else {
+      freq.set(key, { count: 1, r, g, b, a })
+    }
+  }
+
+  // Sample top and bottom rows
+  for (let x = 0; x < width; x++) {
+    sample(x, 0)
+    sample(x, height - 1)
+  }
+  // Sample left and right columns (skip corners already sampled)
+  for (let y = 1; y < height - 1; y++) {
+    sample(0, y)
+    sample(width - 1, y)
+  }
+
+  // Find most frequent bucket
+  let bestKey = ''
+  let bestCount = 0
+  for (const [key, entry] of freq) {
+    if (entry.count > bestCount) {
+      bestCount = entry.count
+      bestKey = key
+    }
+  }
+
+  const best = freq.get(bestKey)!
+  return {
+    r: Math.round(best.r / best.count),
+    g: Math.round(best.g / best.count),
+    b: Math.round(best.b / best.count),
+    a: Math.round(best.a / best.count),
+  }
+}
+
+/**
+ * Replaces pixels within Manhattan distance of bgColor with fully transparent.
+ * Returns a new ImageData.
+ */
+export function removeBackgroundColor(
+  imageData: ImageData,
+  bgColor: { r: number; g: number; b: number; a: number },
+  tolerance: number,
+): ImageData {
+  const data = new Uint8ClampedArray(imageData.data)
+  const result = new ImageData(data, imageData.width, imageData.height)
+
+  for (let i = 0; i < data.length; i += 4) {
+    const dist =
+      Math.abs(data[i] - bgColor.r) +
+      Math.abs(data[i + 1] - bgColor.g) +
+      Math.abs(data[i + 2] - bgColor.b) +
+      Math.abs(data[i + 3] - bgColor.a)
+    if (dist <= tolerance) {
+      data[i] = 0
+      data[i + 1] = 0
+      data[i + 2] = 0
+      data[i + 3] = 0
+    }
+  }
+
+  return result
+}
+
+/**
  * Check if all pixels are fully transparent.
  */
 export function isEmptyTile(imageData: ImageData): boolean {

@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { X, Sparkles, Upload, ArrowRight, ArrowLeft, Download } from 'lucide-react'
 import {
   detectScaleFactor,
+  detectBackgroundColor,
+  removeBackgroundColor,
   downscaleImage,
   quantizeColors,
   sliceIntoTiles,
@@ -13,6 +15,7 @@ import {
 interface AIImportModalProps {
   gridSize: number
   onImport: (tiles: ImageData[]) => void
+  onLoadAsTileset: (image: ImageData, tileSize: number) => void
   onClose: () => void
 }
 
@@ -20,7 +23,7 @@ type Step = 'configure' | 'preview'
 
 const tilePresets = [8, 16, 32, 64]
 
-export function AIImportModal({ gridSize, onImport, onClose }: AIImportModalProps) {
+export function AIImportModal({ gridSize, onImport, onLoadAsTileset, onClose }: AIImportModalProps) {
   const [step, setStep] = useState<Step>('configure')
 
   // Source image
@@ -42,6 +45,9 @@ export function AIImportModal({ gridSize, onImport, onClose }: AIImportModalProp
   const [downscaleMethod, setDownscaleMethod] = useState<DownscaleMethod>('mode')
   const [doQuantize, setDoQuantize] = useState(false)
   const [quantizeThreshold, setQuantizeThreshold] = useState(20)
+  const [removeBg, setRemoveBg] = useState(false)
+  const [bgColor, setBgColor] = useState<{ r: number; g: number; b: number; a: number } | null>(null)
+  const [bgTolerance, setBgTolerance] = useState(20)
 
   // Preview data
   const [downscaled, setDownscaled] = useState<ImageData | null>(null)
@@ -115,6 +121,9 @@ export function AIImportModal({ gridSize, onImport, onClose }: AIImportModalProp
     if (doQuantize) {
       processed = quantizeColors(processed, quantizeThreshold)
     }
+    if (removeBg && bgColor) {
+      processed = removeBackgroundColor(processed, bgColor, bgTolerance)
+    }
     setDownscaled(processed)
 
     const tileW = tileSize * spriteTilesX
@@ -125,7 +134,7 @@ export function AIImportModal({ gridSize, onImport, onClose }: AIImportModalProp
     }
     setPreviewTiles(tiles)
     setStep('preview')
-  }, [sourceImageData, scaleFactor, downscaleMethod, doQuantize, quantizeThreshold, tileSize, spriteTilesX, spriteTilesY, skipEmpty])
+  }, [sourceImageData, scaleFactor, downscaleMethod, doQuantize, quantizeThreshold, removeBg, bgColor, bgTolerance, tileSize, spriteTilesX, spriteTilesY, skipEmpty])
 
   // Draw preview canvas
   useEffect(() => {
@@ -447,6 +456,50 @@ export function AIImportModal({ gridSize, onImport, onClose }: AIImportModalProp
                         </span>
                       </div>
                     )}
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={removeBg}
+                        onChange={(e) => {
+                          const checked = e.target.checked
+                          setRemoveBg(checked)
+                          if (checked && sourceImageData && !bgColor) {
+                            setBgColor(detectBackgroundColor(sourceImageData))
+                          }
+                        }}
+                        className="accent-accent"
+                      />
+                      <span className="text-xs text-text-secondary">Remove background color</span>
+                    </label>
+                    {removeBg && bgColor && (
+                      <div className="ml-5 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-text-muted">Detected:</span>
+                          <div
+                            className="w-5 h-5 rounded border border-border-default"
+                            style={{ backgroundColor: `rgba(${bgColor.r},${bgColor.g},${bgColor.b},${bgColor.a / 255})` }}
+                            title={`rgb(${bgColor.r}, ${bgColor.g}, ${bgColor.b})`}
+                          />
+                          <span className="text-[10px] text-text-muted font-mono">
+                            rgb({bgColor.r}, {bgColor.g}, {bgColor.b})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-text-muted">Tolerance:</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={80}
+                            value={bgTolerance}
+                            onChange={(e) => setBgTolerance(Number(e.target.value))}
+                            className="flex-1 accent-accent"
+                          />
+                          <span className="text-[10px] text-text-muted font-mono w-6 text-right">
+                            {bgTolerance}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -519,14 +572,23 @@ export function AIImportModal({ gridSize, onImport, onClose }: AIImportModalProp
               </button>
             )}
             {step === 'preview' && (
-              <button
-                onClick={handleImport}
-                disabled={previewTiles.length === 0}
-                className="px-4 py-1.5 rounded text-xs bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Download size={13} />
-                Import {previewTiles.length} Sprite{previewTiles.length !== 1 ? 's' : ''}
-              </button>
+              <>
+                <button
+                  onClick={() => downscaled && onLoadAsTileset(downscaled, tileSize)}
+                  disabled={!downscaled}
+                  className="px-4 py-1.5 rounded text-xs text-text-secondary hover:text-text-primary bg-bg-hover transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Load as Tileset
+                </button>
+                <button
+                  onClick={handleImport}
+                  disabled={previewTiles.length === 0}
+                  className="px-4 py-1.5 rounded text-xs bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Download size={13} />
+                  Import {previewTiles.length} Sprite{previewTiles.length !== 1 ? 's' : ''}
+                </button>
+              </>
             )}
           </div>
         </div>
