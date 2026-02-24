@@ -3,14 +3,15 @@ import { useCallback } from 'react'
 interface SymmetryOptions {
   horizontal: boolean
   vertical: boolean
-  gridSize: number
+  width: number
+  height: number
 }
 
-export function useSymmetry({ horizontal, vertical, gridSize }: SymmetryOptions) {
+export function useSymmetry({ horizontal, vertical, width, height }: SymmetryOptions) {
   const getMirroredPixels = useCallback(
     (px: number, py: number): Array<{ px: number; py: number }> => {
-      const mirrorX = gridSize - 1 - px
-      const mirrorY = gridSize - 1 - py
+      const mirrorX = width - 1 - px
+      const mirrorY = height - 1 - py
 
       // Use a Set-like approach to deduplicate (important for odd grids
       // where the center pixel mirrors onto itself)
@@ -45,7 +46,7 @@ export function useSymmetry({ horizontal, vertical, gridSize }: SymmetryOptions)
 
       return points
     },
-    [horizontal, vertical, gridSize],
+    [horizontal, vertical, width, height],
   )
 
   return { getMirroredPixels }

@@ -1,4 +1,4 @@
-import { Upload, Grid3x3, Pencil, Eraser, AlertTriangle, Palette, FilePlus, ChevronDown } from 'lucide-react'
+import { Upload, Grid3x3, Pencil, Eraser, AlertTriangle, Palette, FilePlus, ChevronDown, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import type { PaletteColor } from '../hooks/usePalette'
 import { presetPalettes } from '../data/presetPalettes'
@@ -8,8 +8,13 @@ export type Tool = 'draw' | 'erase'
 interface SidebarProps {
   gridSize: number
   onGridSizeChange: (size: number) => void
+  tileCountX: number
+  tileCountY: number
+  onTileCountXChange: (count: number) => void
+  onTileCountYChange: (count: number) => void
   onUpload: () => void
   onNewProject: () => void
+  onAIImport: () => void
   activeTool: Tool
   onToolChange: (tool: Tool) => void
   activeColor: string
@@ -27,8 +32,13 @@ const tools: { icon: typeof Pencil; label: string; key: Tool }[] = [
 export function Sidebar({
   gridSize,
   onGridSizeChange,
+  tileCountX,
+  tileCountY,
+  onTileCountXChange,
+  onTileCountYChange,
   onUpload,
   onNewProject,
+  onAIImport,
   activeTool,
   onToolChange,
   activeColor,
@@ -65,6 +75,13 @@ export function Sidebar({
         >
           <FilePlus size={16} />
           New Blank Tile
+        </button>
+        <button
+          onClick={onAIImport}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-md bg-bg-hover hover:bg-border-default text-text-secondary hover:text-text-primary text-sm transition-colors cursor-pointer"
+        >
+          <Sparkles size={16} />
+          AI Sprite Import
         </button>
       </div>
 
@@ -275,6 +292,46 @@ export function Sidebar({
               </button>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Sprite Size */}
+      <div className="p-3 border-b border-border-default">
+        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+          <span className="inline-flex items-center gap-1.5">
+            <Grid3x3 size={12} />
+            Sprite Size
+          </span>
+        </h3>
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-text-secondary w-10">W</label>
+            <input
+              type="number"
+              min={1}
+              max={8}
+              value={tileCountX}
+              onChange={(e) => onTileCountXChange(Math.max(1, Math.min(8, parseInt(e.target.value) || 1)))}
+              className="flex-1 px-2 py-1 rounded bg-bg-primary border border-border-default text-text-primary text-xs font-mono focus:border-accent focus:outline-none"
+            />
+            <span className="text-[10px] text-text-muted">tiles</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-text-secondary w-10">H</label>
+            <input
+              type="number"
+              min={1}
+              max={8}
+              value={tileCountY}
+              onChange={(e) => onTileCountYChange(Math.max(1, Math.min(8, parseInt(e.target.value) || 1)))}
+              className="flex-1 px-2 py-1 rounded bg-bg-primary border border-border-default text-text-primary text-xs font-mono focus:border-accent focus:outline-none"
+            />
+            <span className="text-[10px] text-text-muted">tiles</span>
+          </div>
+          <p className="text-[10px] text-text-muted">
+            {tileCountX * gridSize} x {tileCountY * gridSize} px
+          </p>
         </div>
       </div>
 

@@ -8,7 +8,6 @@ import { useSymmetry } from '../hooks/useSymmetry'
 
 interface PixelEditorProps {
   tileData: ImageData | null
-  gridSize: number
   activeTool: Tool
   activeColor: string
   onionSkinData: ImageData | null
@@ -45,7 +44,6 @@ function mod(n: number, m: number): number {
 
 export function PixelEditor({
   tileData,
-  gridSize,
   activeTool,
   activeColor,
   onionSkinData,
@@ -62,10 +60,15 @@ export function PixelEditor({
   const [wrapAround, setWrapAround] = useState(false)
   const [onionSkin, setOnionSkin] = useState(false)
 
+  const spriteW = tileData?.width ?? 0
+  const spriteH = tileData?.height ?? 0
+
   const wrapAroundRef = useRef(wrapAround)
   wrapAroundRef.current = wrapAround
-  const gridSizeRef = useRef(gridSize)
-  gridSizeRef.current = gridSize
+  const spriteWRef = useRef(spriteW)
+  spriteWRef.current = spriteW
+  const spriteHRef = useRef(spriteH)
+  spriteHRef.current = spriteH
   const activeToolRef = useRef(activeTool)
   activeToolRef.current = activeTool
   const activeColorRef = useRef(activeColor)
@@ -76,7 +79,8 @@ export function PixelEditor({
   const { getMirroredPixels } = useSymmetry({
     horizontal: symmetryH,
     vertical: symmetryV,
-    gridSize,
+    width: spriteW,
+    height: spriteH,
   })
   const getMirroredPixelsRef = useRef(getMirroredPixels)
   getMirroredPixelsRef.current = getMirroredPixels
@@ -90,18 +94,17 @@ export function PixelEditor({
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    canvas.width = gridSize
-    canvas.height = gridSize
+    const w = spriteW || 1
+    const h = spriteH || 1
+
+    canvas.width = w
+    canvas.height = h
     ctx.imageSmoothingEnabled = false
-    ctx.clearRect(0, 0, gridSize, gridSize)
+    ctx.clearRect(0, 0, w, h)
 
     // Onion skin: draw previous frame underneath
     if (onionSkin && onionSkinData) {
-      ctx.globalAlpha = 0.3
-      ctx.putImageData(onionSkinData, 0, 0)
-      // putImageData ignores globalAlpha, so we need a different approach:
-      // draw onion skin via a temp canvas
-      ctx.clearRect(0, 0, gridSize, gridSize)
+      // putImageData ignores globalAlpha, so draw via a temp canvas
       const tmp = document.createElement('canvas')
       tmp.width = onionSkinData.width
       tmp.height = onionSkinData.height
@@ -115,13 +118,13 @@ export function PixelEditor({
     if (tileData) {
       // Draw current tile data on top via temp canvas to preserve alpha compositing
       const tmp = document.createElement('canvas')
-      tmp.width = gridSize
-      tmp.height = gridSize
+      tmp.width = tileData.width
+      tmp.height = tileData.height
       const tmpCtx = tmp.getContext('2d')!
       tmpCtx.putImageData(tileData, 0, 0)
       ctx.drawImage(tmp, 0, 0)
     }
-  }, [tileData, gridSize, onionSkin, onionSkinData])
+  }, [tileData, spriteW, spriteH, onionSkin, onionSkinData])
 
   useEffect(() => {
     redraw()
@@ -132,8 +135,8 @@ export function PixelEditor({
       const canvas = canvasRef.current
       if (!canvas) return null
       const rect = canvas.getBoundingClientRect()
-      const scaleX = gridSizeRef.current / rect.width
-      const scaleY = gridSizeRef.current / rect.height
+      const scaleX = spriteWRef.current / rect.width
+      const scaleY = spriteHRef.current / rect.height
       const rawX = Math.floor((clientX - rect.left) * scaleX)
       const rawY = Math.floor((clientY - rect.top) * scaleY)
       return { rawX, rawY }
@@ -143,11 +146,12 @@ export function PixelEditor({
 
   const resolveCoords = useCallback(
     (rawX: number, rawY: number) => {
-      const gs = gridSizeRef.current
+      const w = spriteWRef.current
+      const h = spriteHRef.current
       if (wrapAroundRef.current) {
-        return { px: mod(rawX, gs), py: mod(rawY, gs) }
+        return { px: mod(rawX, w), py: mod(rawY, h) }
       }
-      if (rawX < 0 || rawX >= gs || rawY < 0 || rawY >= gs) return null
+      if (rawX < 0 || rawX >= w || rawY < 0 || rawY >= h) return null
       return { px: rawX, py: rawY }
     },
     [],
@@ -160,14 +164,15 @@ export function PixelEditor({
       const ctx = canvas.getContext('2d')
       if (!ctx) return
 
-      const gs = gridSizeRef.current
+      const w = spriteWRef.current
+      const h = spriteHRef.current
 
       // Read pixel data from tileData (not from canvas which has onion skin composited)
       const current = tileDataRef.current
       if (!current) return
       const newData = new ImageData(
         new Uint8ClampedArray(current.data),
-        gs, gs,
+        w, h,
       )
 
       const points = getMirroredPixelsRef.current(px, py)
@@ -175,11 +180,11 @@ export function PixelEditor({
       const tool = activeToolRef.current
 
       for (const pt of points) {
-        const wx = wrap ? mod(pt.px, gs) : pt.px
-        const wy = wrap ? mod(pt.py, gs) : pt.py
+        const wx = wrap ? mod(pt.px, w) : pt.px
+        const wy = wrap ? mod(pt.py, h) : pt.py
 
-        if (wx < 0 || wx >= gs || wy < 0 || wy >= gs) continue
-        const idx = (wy * gs + wx) * 4
+        if (wx < 0 || wx >= w || wy < 0 || wy >= h) continue
+        const idx = (wy * w + wx) * 4
 
         if (tool === 'erase') {
           newData.data[idx] = 0
@@ -237,22 +242,23 @@ export function PixelEditor({
   const nudge = useCallback(
     (dx: number, dy: number) => {
       if (!tileData) return
-      const gs = gridSize
+      const w = tileData.width
+      const h = tileData.height
       const src = tileData.data
       const dst = new Uint8ClampedArray(src.length)
       const wrap = wrapAround
 
-      for (let y = 0; y < gs; y++) {
-        for (let x = 0; x < gs; x++) {
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
           let sx = x - dx
           let sy = y - dy
           if (wrap) {
-            sx = mod(sx, gs)
-            sy = mod(sy, gs)
+            sx = mod(sx, w)
+            sy = mod(sy, h)
           }
-          if (sx < 0 || sx >= gs || sy < 0 || sy >= gs) continue
-          const srcIdx = (sy * gs + sx) * 4
-          const dstIdx = (y * gs + x) * 4
+          if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue
+          const srcIdx = (sy * w + sx) * 4
+          const dstIdx = (y * w + x) * 4
           dst[dstIdx] = src[srcIdx]
           dst[dstIdx + 1] = src[srcIdx + 1]
           dst[dstIdx + 2] = src[srcIdx + 2]
@@ -260,27 +266,27 @@ export function PixelEditor({
         }
       }
 
-      const newData = new ImageData(dst, gs, gs)
+      const newData = new ImageData(dst, w, h)
       onTileDataChange(newData)
     },
-    [tileData, gridSize, wrapAround, onTileDataChange],
+    [tileData, wrapAround, onTileDataChange],
   )
 
   const handleDownload = useCallback(() => {
     if (!tileData) return
     // Render just the tile data (without onion skin) for download
     const tmp = document.createElement('canvas')
-    tmp.width = gridSize
-    tmp.height = gridSize
+    tmp.width = tileData.width
+    tmp.height = tileData.height
     const ctx = tmp.getContext('2d')!
     ctx.imageSmoothingEnabled = false
     ctx.putImageData(tileData, 0, 0)
 
     const link = document.createElement('a')
-    link.download = `tile_${gridSize}x${gridSize}.png`
+    link.download = `tile_${tileData.width}x${tileData.height}.png`
     link.href = tmp.toDataURL('image/png')
     link.click()
-  }, [tileData, gridSize])
+  }, [tileData])
 
   return (
     <div className="p-3 border-b border-border-default">
@@ -336,11 +342,16 @@ export function PixelEditor({
       </div>
 
       {/* Canvas wrapper */}
+      {(() => {
+        const aspect = spriteW && spriteH ? spriteW / spriteH : 1
+        const displayW = aspect >= 1 ? EDITOR_DISPLAY_SIZE : Math.round(EDITOR_DISPLAY_SIZE * aspect)
+        const displayH = aspect >= 1 ? Math.round(EDITOR_DISPLAY_SIZE / aspect) : EDITOR_DISPLAY_SIZE
+        return (
       <div
         className="relative mx-auto border border-border-default rounded"
         style={{
-          width: EDITOR_DISPLAY_SIZE,
-          height: EDITOR_DISPLAY_SIZE,
+          width: displayW,
+          height: displayH,
           background: `
             repeating-conic-gradient(#1a1a2e 0% 25%, #0f0f1e 0% 50%)
             50% / 16px 16px
@@ -351,8 +362,8 @@ export function PixelEditor({
           ref={canvasRef}
           onMouseDown={handleMouseDown}
           style={{
-            width: EDITOR_DISPLAY_SIZE,
-            height: EDITOR_DISPLAY_SIZE,
+            width: displayW,
+            height: displayH,
             imageRendering: 'pixelated',
             cursor: tileData ? 'crosshair' : 'default',
           }}
@@ -360,9 +371,9 @@ export function PixelEditor({
 
         {/* Symmetry guides */}
         {tileData && symmetryV && (() => {
-          const isOdd = gridSize % 2 === 1
-          const pixelDisplaySize = EDITOR_DISPLAY_SIZE / gridSize
-          const centerPx = Math.floor(gridSize / 2)
+          const isOdd = spriteW % 2 === 1
+          const pixelDisplaySize = displayW / spriteW
+          const centerPx = Math.floor(spriteW / 2)
           const leftPos = isOdd ? (centerPx + 0.5) * pixelDisplaySize : centerPx * pixelDisplaySize
           const widthPx = isOdd ? pixelDisplaySize : 1
           return (
@@ -373,9 +384,9 @@ export function PixelEditor({
           )
         })()}
         {tileData && symmetryH && (() => {
-          const isOdd = gridSize % 2 === 1
-          const pixelDisplaySize = EDITOR_DISPLAY_SIZE / gridSize
-          const centerPx = Math.floor(gridSize / 2)
+          const isOdd = spriteH % 2 === 1
+          const pixelDisplaySize = displayH / spriteH
+          const centerPx = Math.floor(spriteH / 2)
           const topPos = isOdd ? (centerPx + 0.5) * pixelDisplaySize : centerPx * pixelDisplaySize
           const heightPx = isOdd ? pixelDisplaySize : 1
           return (
@@ -397,6 +408,8 @@ export function PixelEditor({
           </div>
         )}
       </div>
+        )
+      })()}
 
       {/* Nudge + info row */}
       <div className="flex items-center justify-between mt-2">
@@ -422,7 +435,7 @@ export function PixelEditor({
           </button>
         </div>
         <p className="text-xs text-text-muted">
-          {gridSize}x{gridSize}
+          {spriteW}x{spriteH}
           {wrapAround && <span className="text-green-400 ml-1">wrap</span>}
           {onionSkin && onionSkinData && <span className="text-purple-400 ml-1">onion</span>}
         </p>

@@ -7,6 +7,7 @@ import { SpriteBank } from './components/SpriteBank'
 import { ExportModal } from './components/ExportModal'
 import { NewProjectModal } from './components/NewProjectModal'
 import { AnimationPreview } from './components/AnimationPreview'
+import { AIImportModal } from './components/AIImportModal'
 import { usePalette } from './hooks/usePalette'
 import { exportProject, type ExportOptions } from './utils/exportProject'
 
@@ -23,6 +24,8 @@ let spriteCounter = 0
 function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [gridSize, setGridSize] = useState(32)
+  const [tileCountX, setTileCountX] = useState(1)
+  const [tileCountY, setTileCountY] = useState(1)
   const [selectedTile, setSelectedTile] = useState<{ col: number; row: number } | null>(null)
   const [tileData, setTileData] = useState<ImageData | null>(null)
   const [activeTool, setActiveTool] = useState<Tool>('draw')
@@ -31,6 +34,7 @@ function App() {
   const [editingBankIndex, setEditingBankIndex] = useState<number | null>(null)
   const [showExportModal, setShowExportModal] = useState(false)
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
+  const [showAIImportModal, setShowAIImportModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { colors: palette, truncated: paletteTruncated, totalUnique: paletteTotalUnique } = usePalette(image)
@@ -55,6 +59,7 @@ function App() {
       if (e.key === 'Escape') {
         setShowExportModal(false)
         setShowNewProjectModal(false)
+        setShowAIImportModal(false)
       }
     }
     window.addEventListener('keydown', handler)
@@ -91,9 +96,9 @@ function App() {
     setSelectedTile(null)
     setEditingBankIndex(null)
 
-    const blank = new ImageData(tileSize, tileSize)
+    const blank = new ImageData(tileSize * tileCountX, tileSize * tileCountY)
     setTileData(blank)
-  }, [])
+  }, [tileCountX, tileCountY])
 
   const handleTileSelect = useCallback(
     (col: number, row: number) => {
@@ -109,15 +114,19 @@ function App() {
       ctx.imageSmoothingEnabled = false
       ctx.drawImage(image, 0, 0)
 
+      // Clamp extraction region to image bounds
+      const extractW = Math.min(gridSize * tileCountX, image.width - col * gridSize)
+      const extractH = Math.min(gridSize * tileCountY, image.height - row * gridSize)
+
       const extracted = ctx.getImageData(
         col * gridSize,
         row * gridSize,
-        gridSize,
-        gridSize,
+        extractW,
+        extractH,
       )
       setTileData(extracted)
     },
-    [image, gridSize],
+    [image, gridSize, tileCountX, tileCountY],
   )
 
   const handleClearTile = useCallback(() => {
@@ -238,6 +247,21 @@ function App() {
     [sprites],
   )
 
+  const handleAIImport = useCallback((tiles: ImageData[]) => {
+    setShowAIImportModal(false)
+    const newEntries: SpriteEntry[] = tiles.map((tile) => {
+      spriteCounter++
+      return {
+        id: `sprite_${spriteCounter}_${Date.now()}`,
+        name: `sprite_${String(spriteCounter).padStart(3, '0')}`,
+        width: tile.width,
+        height: tile.height,
+        imageData: tile,
+      }
+    })
+    setSprites((prev) => [...prev, ...newEntries])
+  }, [])
+
   return (
     <div className="flex flex-col h-full">
       {/* Main area */}
@@ -253,8 +277,13 @@ function App() {
         <Sidebar
           gridSize={gridSize}
           onGridSizeChange={setGridSize}
+          tileCountX={tileCountX}
+          tileCountY={tileCountY}
+          onTileCountXChange={setTileCountX}
+          onTileCountYChange={setTileCountY}
           onUpload={handleUpload}
           onNewProject={() => setShowNewProjectModal(true)}
+          onAIImport={() => setShowAIImportModal(true)}
           activeTool={activeTool}
           onToolChange={setActiveTool}
           activeColor={activeColor}
@@ -267,6 +296,8 @@ function App() {
         <TilesetViewer
           image={image}
           gridSize={gridSize}
+          tileCountX={tileCountX}
+          tileCountY={tileCountY}
           selectedTile={selectedTile}
           onTileSelect={handleTileSelect}
         />
@@ -276,7 +307,6 @@ function App() {
           <PropertiesPanel image={image} gridSize={gridSize} />
           <PixelEditor
             tileData={tileData}
-            gridSize={gridSize}
             activeTool={activeTool}
             activeColor={activeColor}
             onionSkinData={onionSkinData}
@@ -305,6 +335,13 @@ function App() {
         <NewProjectModal
           onConfirm={handleNewProject}
           onClose={() => setShowNewProjectModal(false)}
+        />
+      )}
+      {showAIImportModal && (
+        <AIImportModal
+          gridSize={gridSize}
+          onImport={handleAIImport}
+          onClose={() => setShowAIImportModal(false)}
         />
       )}
       {showExportModal && sprites.length > 0 && (

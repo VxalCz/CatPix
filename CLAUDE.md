@@ -49,6 +49,7 @@ App
     └── PixelEditor            — 256×256 display canvas for editing; symmetry toggles
 SpriteBank (bottom bar)        — thumbnail strip of saved sprites; export trigger
 ExportModal (overlay)          — layout options, preview, triggers exportProject()
+AIImportModal (overlay)        — two-step AI sprite import (configure → preview)
 ```
 
 ### Custom hooks
@@ -56,6 +57,18 @@ ExportModal (overlay)          — layout options, preview, triggers exportProje
 - `useCanvas` — generic hook: takes `{width, height, draw}`, manages canvas sizing and exposes `redraw()`
 - `usePalette` — extracts the top-64 most-frequent colors from the loaded image (skips fully transparent pixels); returns `{colors, truncated, totalUnique}`
 - `useSymmetry` — given `{horizontal, vertical, gridSize}`, returns `getMirroredPixels(px, py)` which yields all pixel coordinates to paint (deduplicates center pixels on odd-size grids)
+
+### AI Sprite Import
+
+`AIImportModal` lets users import AI-generated pixel art (512x512+ images where each logical pixel is an NxN block). The pipeline:
+
+1. User uploads an image → `detectScaleFactor()` samples random NxN blocks for candidates [2–16], scores uniformity, returns sorted `{factor, confidence}[]`
+2. User picks scale factor (auto-detected or manual) and configures tile size, sprite layout (tiles wide × tall), optional color quantization
+3. `downscaleNearestNeighbor()` samples center pixel of each NxN block → true pixel resolution
+4. `sliceIntoTiles()` cuts the downscaled image into sprites, optionally skipping empty tiles
+5. Resulting `ImageData[]` is passed to `App.handleAIImport()` which assigns IDs/names via `spriteCounter` and appends to `sprites[]`
+
+Utility functions live in `src/utils/aiImport.ts`: `detectScaleFactor`, `downscaleNearestNeighbor`, `quantizeColors`, `sliceIntoTiles`, `isEmptyTile`.
 
 ### Styling
 
@@ -71,6 +84,6 @@ Tailwind CSS v4 via the `@tailwindcss/vite` plugin (no `tailwind.config.js`). Th
 
 - `D` — draw tool
 - `E` — erase tool
-- `Escape` — close export modal
+- `Escape` — close modals (export, new project, AI import)
 - Scroll wheel — zoom TilesetViewer
 - Middle-click or Alt+left-click — pan TilesetViewer

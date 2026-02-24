@@ -63,14 +63,22 @@ export function AnimationPreview({ sprites }: AnimationPreviewProps) {
           `,
         }}
       >
-        <canvas
-          ref={canvasRef}
-          style={{
-            width: PREVIEW_SIZE,
-            height: PREVIEW_SIZE,
-            imageRendering: 'pixelated',
-          }}
-        />
+        {(() => {
+          const sprite = sprites[currentFrame]
+          const sw = sprite?.width ?? PREVIEW_SIZE
+          const sh = sprite?.height ?? PREVIEW_SIZE
+          const scale = Math.min(PREVIEW_SIZE / sw, PREVIEW_SIZE / sh)
+          return (
+            <canvas
+              ref={canvasRef}
+              style={{
+                width: Math.round(sw * scale),
+                height: Math.round(sh * scale),
+                imageRendering: 'pixelated',
+              }}
+            />
+          )
+        })()}
         {sprites.length === 0 && (
           <span className="absolute text-[10px] text-text-muted">No frames</span>
         )}

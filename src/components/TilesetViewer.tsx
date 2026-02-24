@@ -4,6 +4,8 @@ import { useCanvas } from '../hooks/useCanvas'
 interface TilesetViewerProps {
   image: HTMLImageElement | null
   gridSize: number
+  tileCountX: number
+  tileCountY: number
   selectedTile: { col: number; row: number } | null
   onTileSelect: (col: number, row: number) => void
 }
@@ -12,7 +14,7 @@ const ZOOM_MIN = 0.25
 const ZOOM_MAX = 16
 const ZOOM_STEP = 0.15
 
-export function TilesetViewer({ image, gridSize, selectedTile, onTileSelect }: TilesetViewerProps) {
+export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selectedTile, onTileSelect }: TilesetViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
@@ -46,45 +48,53 @@ export function TilesetViewer({ image, gridSize, selectedTile, onTileSelect }: T
         ctx.stroke()
       }
 
-      // Highlight selected tile
+      // Multi-tile region dimensions
+      const regionW = gridSize * tileCountX
+      const regionH = gridSize * tileCountY
+
+      // Highlight selected tile region
       if (selectedTile) {
+        const selW = Math.min(regionW, image.width - selectedTile.col * gridSize)
+        const selH = Math.min(regionH, image.height - selectedTile.row * gridSize)
         ctx.fillStyle = 'rgba(34, 197, 94, 0.2)'
         ctx.fillRect(
           selectedTile.col * gridSize,
           selectedTile.row * gridSize,
-          gridSize,
-          gridSize,
+          selW,
+          selH,
         )
         ctx.strokeStyle = 'rgba(34, 197, 94, 0.9)'
         ctx.lineWidth = 2
         ctx.strokeRect(
           selectedTile.col * gridSize + 1,
           selectedTile.row * gridSize + 1,
-          gridSize - 2,
-          gridSize - 2,
+          selW - 2,
+          selH - 2,
         )
       }
 
-      // Highlight hovered tile (on top of selection)
+      // Highlight hovered tile region (on top of selection)
       if (hoveredTile && !(selectedTile && hoveredTile.col === selectedTile.col && hoveredTile.row === selectedTile.row)) {
+        const hovW = Math.min(regionW, image.width - hoveredTile.col * gridSize)
+        const hovH = Math.min(regionH, image.height - hoveredTile.row * gridSize)
         ctx.fillStyle = 'rgba(99, 102, 241, 0.25)'
         ctx.fillRect(
           hoveredTile.col * gridSize,
           hoveredTile.row * gridSize,
-          gridSize,
-          gridSize,
+          hovW,
+          hovH,
         )
         ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'
         ctx.lineWidth = 2
         ctx.strokeRect(
           hoveredTile.col * gridSize + 1,
           hoveredTile.row * gridSize + 1,
-          gridSize - 2,
-          gridSize - 2,
+          hovW - 2,
+          hovH - 2,
         )
       }
     },
-    [image, gridSize, hoveredTile, selectedTile],
+    [image, gridSize, tileCountX, tileCountY, hoveredTile, selectedTile],
   )
 
   const { canvasRef, redraw } = useCanvas({
@@ -124,14 +134,16 @@ export function TilesetViewer({ image, gridSize, selectedTile, onTileSelect }: T
       const canvasY = (e.clientY - rect.top - offset.y) / zoom
 
       if (canvasX >= 0 && canvasX < image.width && canvasY >= 0 && canvasY < image.height) {
-        return {
-          col: Math.floor(canvasX / gridSize),
-          row: Math.floor(canvasY / gridSize),
-        }
+        const maxCol = Math.ceil(image.width / gridSize) - 1
+        const maxRow = Math.ceil(image.height / gridSize) - 1
+        // Clamp so multi-tile region doesn't extend past image bounds
+        const col = Math.min(Math.floor(canvasX / gridSize), Math.max(0, maxCol - tileCountX + 1))
+        const row = Math.min(Math.floor(canvasY / gridSize), Math.max(0, maxRow - tileCountY + 1))
+        return { col, row }
       }
       return null
     },
-    [image, offset, zoom, gridSize],
+    [image, offset, zoom, gridSize, tileCountX, tileCountY],
   )
 
   const handleWheel = useCallback(
