@@ -1,9 +1,14 @@
-import { Upload, Grid3x3, Pencil, Eraser, AlertTriangle, Palette, FilePlus, ChevronDown, Sparkles } from 'lucide-react'
-import { useState } from 'react'
+import {
+  Upload, Grid3x3, Pencil, Eraser, AlertTriangle, Palette, FilePlus,
+  ChevronDown, Sparkles, PaintBucket, Pipette, Minus, Square, BoxSelect,
+  Undo2, Redo2, Save, FolderOpen, Download, Sun, Moon,
+} from 'lucide-react'
+import { useState, useEffect } from 'react'
 import type { PaletteColor } from '../hooks/usePalette'
 import { presetPalettes } from '../data/presetPalettes'
+import type { Tool } from '../state/appReducer'
 
-export type Tool = 'draw' | 'erase'
+export type { Tool } from '../state/appReducer'
 
 interface SidebarProps {
   gridSize: number
@@ -22,11 +27,23 @@ interface SidebarProps {
   palette: PaletteColor[]
   paletteTruncated: boolean
   paletteTotalUnique: number
+  canUndo: boolean
+  canRedo: boolean
+  onUndo: () => void
+  onRedo: () => void
+  onSaveProject: () => void
+  onLoadProject: () => void
+  onExportCatPix: () => void
 }
 
 const tools: { icon: typeof Pencil; label: string; key: Tool }[] = [
   { icon: Pencil, label: 'Draw (D)', key: 'draw' },
   { icon: Eraser, label: 'Erase (E)', key: 'erase' },
+  { icon: PaintBucket, label: 'Fill (F)', key: 'fill' },
+  { icon: Pipette, label: 'Eyedropper (I)', key: 'eyedropper' },
+  { icon: Minus, label: 'Line (L)', key: 'line' },
+  { icon: Square, label: 'Rectangle (R)', key: 'rectangle' },
+  { icon: BoxSelect, label: 'Selection (M)', key: 'selection' },
 ]
 
 export function Sidebar({
@@ -46,15 +63,29 @@ export function Sidebar({
   palette,
   paletteTruncated,
   paletteTotalUnique,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  onSaveProject,
+  onLoadProject,
+  onExportCatPix,
 }: SidebarProps) {
   const [activePreset, setActivePreset] = useState<string | null>(null)
   const [showPresets, setShowPresets] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('catpix-theme') as 'dark' | 'light') ?? 'dark'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('catpix-theme', theme)
+  }, [theme])
 
   const presetColors = activePreset
     ? presetPalettes.find((p) => p.name === activePreset)?.colors ?? []
     : []
 
-  // Show image palette if available, otherwise show preset
   const displayColors = palette.length > 0 ? palette : null
   const displayPreset = presetColors.length > 0 ? presetColors : null
 
@@ -65,6 +96,7 @@ export function Sidebar({
         <button
           onClick={onUpload}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-md bg-accent hover:bg-accent-hover text-white text-sm font-medium transition-colors cursor-pointer"
+          aria-label="Upload tileset image"
         >
           <Upload size={16} />
           Upload Tileset
@@ -72,6 +104,7 @@ export function Sidebar({
         <button
           onClick={onNewProject}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-md bg-bg-hover hover:bg-border-default text-text-secondary hover:text-text-primary text-sm transition-colors cursor-pointer"
+          aria-label="Create new blank tile"
         >
           <FilePlus size={16} />
           New Blank Tile
@@ -79,10 +112,70 @@ export function Sidebar({
         <button
           onClick={onAIImport}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-md bg-bg-hover hover:bg-border-default text-text-secondary hover:text-text-primary text-sm transition-colors cursor-pointer"
+          aria-label="AI sprite import"
         >
           <Sparkles size={16} />
           AI Sprite Import
         </button>
+      </div>
+
+      {/* Project save/load */}
+      <div className="p-3 border-b border-border-default space-y-1.5">
+        <div className="flex gap-1.5">
+          <button
+            onClick={onSaveProject}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md bg-bg-hover hover:bg-border-default text-text-secondary hover:text-text-primary text-xs transition-colors cursor-pointer"
+            title="Save project to browser"
+            aria-label="Save project"
+          >
+            <Save size={14} />
+            Save
+          </button>
+          <button
+            onClick={onLoadProject}
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md bg-bg-hover hover:bg-border-default text-text-secondary hover:text-text-primary text-xs transition-colors cursor-pointer"
+            title="Load saved project"
+            aria-label="Load project"
+          >
+            <FolderOpen size={14} />
+            Load
+          </button>
+        </div>
+        <button
+          onClick={onExportCatPix}
+          className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md bg-bg-hover hover:bg-border-default text-text-secondary hover:text-text-primary text-xs transition-colors cursor-pointer"
+          title="Export as .catpix project file"
+          aria-label="Export as .catpix"
+        >
+          <Download size={14} />
+          Export .catpix
+        </button>
+      </div>
+
+      {/* Undo / Redo */}
+      <div className="p-3 border-b border-border-default">
+        <div className="flex gap-1">
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="flex-1 flex items-center justify-center gap-1 p-2 rounded-md transition-colors cursor-pointer text-xs text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+          >
+            <Undo2 size={16} />
+            Undo
+          </button>
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="flex-1 flex items-center justify-center gap-1 p-2 rounded-md transition-colors cursor-pointer text-xs text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+          >
+            <Redo2 size={16} />
+            Redo
+          </button>
+        </div>
       </div>
 
       {/* Tools */}
@@ -90,19 +183,20 @@ export function Sidebar({
         <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
           Tools
         </h3>
-        <div className="flex gap-1">
+        <div className="grid grid-cols-4 gap-1">
           {tools.map((tool) => (
             <button
               key={tool.key}
               onClick={() => onToolChange(tool.key)}
-              className={`flex-1 flex flex-col items-center gap-1 p-2 rounded-md transition-colors cursor-pointer text-xs ${
+              className={`flex flex-col items-center gap-0.5 p-1.5 rounded-md transition-colors cursor-pointer text-[10px] ${
                 activeTool === tool.key
                   ? 'bg-accent text-white'
                   : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
               }`}
               title={tool.label}
+              aria-label={tool.label}
             >
-              <tool.icon size={18} />
+              <tool.icon size={16} />
               {tool.label.split(' ')[0]}
             </button>
           ))}
@@ -130,6 +224,7 @@ export function Sidebar({
               value={activeColor.startsWith('#') ? activeColor.slice(0, 7) : '#000000'}
               onChange={(e) => onColorChange(e.target.value)}
               className="absolute inset-0 opacity-0 cursor-pointer"
+              aria-label="Pick color"
             />
           </div>
           <span className="text-xs font-mono text-text-secondary">{activeColor}</span>
@@ -336,8 +431,16 @@ export function Sidebar({
       </div>
 
       {/* Footer */}
-      <div className="p-3 border-t border-border-default text-xs text-text-muted text-center">
-        CatPix v0.1
+      <div className="p-3 border-t border-border-default flex items-center justify-between">
+        <span className="text-xs text-text-muted">CatPix v0.2</span>
+        <button
+          onClick={() => setTheme((t) => t === 'dark' ? 'light' : 'dark')}
+          className="p-1.5 rounded bg-bg-hover text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+        >
+          {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+        </button>
       </div>
     </div>
   )

@@ -23,8 +23,9 @@ export function useCanvas({ width, height, draw }: UseCanvasOptions) {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    canvas.width = width
-    canvas.height = height
+    // Guard dimension assignment to avoid unnecessary context reset
+    if (canvas.width !== width) canvas.width = width
+    if (canvas.height !== height) canvas.height = height
     redraw()
   }, [width, height, redraw])
 

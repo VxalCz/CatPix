@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useState } from 'react'
 
 interface UseAnimationPlayerOptions {
   frameCount: number
@@ -10,36 +10,34 @@ export function useAnimationPlayer({ frameCount, fps, playing }: UseAnimationPla
   const [currentFrame, setCurrentFrame] = useState(0)
   const lastTimeRef = useRef(0)
   const rafRef = useRef(0)
+  const frameCountRef = useRef(frameCount)
+  const fpsRef = useRef(fps)
 
-  const tick = useCallback(
-    (time: number) => {
-      if (frameCount === 0) return
+  useEffect(() => {
+    frameCountRef.current = frameCount
+    fpsRef.current = fps
+  })
 
-      const interval = 1000 / fps
+  useEffect(() => {
+    if (!playing || frameCount === 0) return
+
+    lastTimeRef.current = performance.now()
+
+    const tick = (time: number) => {
+      const interval = 1000 / fpsRef.current
       if (time - lastTimeRef.current >= interval) {
         lastTimeRef.current = time - ((time - lastTimeRef.current) % interval)
-        setCurrentFrame((prev) => (prev + 1) % frameCount)
+        setCurrentFrame((prev) => (prev + 1) % frameCountRef.current)
       }
-
-      rafRef.current = requestAnimationFrame(tick)
-    },
-    [frameCount, fps],
-  )
-
-  useEffect(() => {
-    if (playing && frameCount > 0) {
-      lastTimeRef.current = performance.now()
       rafRef.current = requestAnimationFrame(tick)
     }
+
+    rafRef.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [playing, frameCount, tick])
+  }, [playing, frameCount])
 
-  // Reset frame when count changes
-  useEffect(() => {
-    if (frameCount > 0) {
-      setCurrentFrame((prev) => (prev >= frameCount ? 0 : prev))
-    }
-  }, [frameCount])
+  // Clamp frame if count changes
+  const safeFrame = frameCount > 0 ? currentFrame % frameCount : 0
 
-  return { currentFrame }
+  return { currentFrame: safeFrame }
 }

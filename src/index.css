@@ -15,6 +15,21 @@
   --color-text-muted: #64748b;
 }
 
+[data-theme="light"] {
+  --color-bg-primary: #f8fafc;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #f1f5f9;
+  --color-bg-panel: #ffffff;
+  --color-bg-hover: #e2e8f0;
+  --color-border-default: #cbd5e1;
+  --color-border-active: #6366f1;
+  --color-accent: #6366f1;
+  --color-accent-hover: #4f46e5;
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94a3b8;
+}
+
 * {
   box-sizing: border-box;
 }

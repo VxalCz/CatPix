@@ -7,19 +7,28 @@ interface SymmetryOptions {
   height: number
 }
 
+// Reusable singleton for the common "no symmetry" case (zero allocation)
+const _singletonPoint: Array<{ px: number; py: number }> = [{ px: 0, py: 0 }]
+
 export function useSymmetry({ horizontal, vertical, width, height }: SymmetryOptions) {
   const getMirroredPixels = useCallback(
     (px: number, py: number): Array<{ px: number; py: number }> => {
+      // Fast path: no symmetry enabled
+      if (!horizontal && !vertical) {
+        _singletonPoint[0].px = px
+        _singletonPoint[0].py = py
+        return _singletonPoint
+      }
+
       const mirrorX = width - 1 - px
       const mirrorY = height - 1 - py
 
-      // Use a Set-like approach to deduplicate (important for odd grids
-      // where the center pixel mirrors onto itself)
-      const seen = new Set<string>()
+      // Use integer key for dedup (avoids string allocation)
+      const seen = new Set<number>()
       const points: Array<{ px: number; py: number }> = []
 
       const add = (x: number, y: number) => {
-        const key = `${x},${y}`
+        const key = (y << 16) | x
         if (!seen.has(key)) {
           seen.add(key)
           points.push({ px: x, py: y })

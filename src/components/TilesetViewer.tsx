@@ -16,6 +16,7 @@ const ZOOM_STEP = 0.15
 
 export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selectedTile, onTileSelect }: TilesetViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const hoverOverlayRef = useRef<HTMLCanvasElement>(null)
   const [zoom, setZoom] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
@@ -25,28 +26,28 @@ export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selecte
   const canvasWidth = image ? image.width : 512
   const canvasHeight = image ? image.height : 512
 
+  // Draw image + grid + selection (NOT hover — hover is on overlay)
   const drawGrid = useCallback(
     (ctx: CanvasRenderingContext2D) => {
       if (!image) return
 
       ctx.drawImage(image, 0, 0)
 
-      // Draw grid
+      // Batch all grid lines into a single path
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
       ctx.lineWidth = 1
+      ctx.beginPath()
 
       for (let x = 0; x <= image.width; x += gridSize) {
-        ctx.beginPath()
         ctx.moveTo(x + 0.5, 0)
         ctx.lineTo(x + 0.5, image.height)
-        ctx.stroke()
       }
       for (let y = 0; y <= image.height; y += gridSize) {
-        ctx.beginPath()
         ctx.moveTo(0, y + 0.5)
         ctx.lineTo(image.width, y + 0.5)
-        ctx.stroke()
       }
+
+      ctx.stroke()
 
       // Multi-tile region dimensions
       const regionW = gridSize * tileCountX
@@ -72,29 +73,8 @@ export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selecte
           selH - 2,
         )
       }
-
-      // Highlight hovered tile region (on top of selection)
-      if (hoveredTile && !(selectedTile && hoveredTile.col === selectedTile.col && hoveredTile.row === selectedTile.row)) {
-        const hovW = Math.min(regionW, image.width - hoveredTile.col * gridSize)
-        const hovH = Math.min(regionH, image.height - hoveredTile.row * gridSize)
-        ctx.fillStyle = 'rgba(99, 102, 241, 0.25)'
-        ctx.fillRect(
-          hoveredTile.col * gridSize,
-          hoveredTile.row * gridSize,
-          hovW,
-          hovH,
-        )
-        ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'
-        ctx.lineWidth = 2
-        ctx.strokeRect(
-          hoveredTile.col * gridSize + 1,
-          hoveredTile.row * gridSize + 1,
-          hovW - 2,
-          hovH - 2,
-        )
-      }
     },
-    [image, gridSize, tileCountX, tileCountY, hoveredTile, selectedTile],
+    [image, gridSize, tileCountX, tileCountY, selectedTile],
   )
 
   const { canvasRef, redraw } = useCanvas({
@@ -105,7 +85,43 @@ export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selecte
 
   useEffect(() => {
     redraw()
-  }, [redraw, hoveredTile, selectedTile])
+  }, [redraw, selectedTile])
+
+  // Draw hover highlight imperatively on overlay canvas (avoids full tileset redraw)
+  useEffect(() => {
+    const overlay = hoverOverlayRef.current
+    if (!overlay || !image) return
+    const ctx = overlay.getContext('2d')
+    if (!ctx) return
+
+    if (overlay.width !== image.width) overlay.width = image.width
+    if (overlay.height !== image.height) overlay.height = image.height
+    ctx.clearRect(0, 0, overlay.width, overlay.height)
+
+    if (!hoveredTile) return
+    if (selectedTile && hoveredTile.col === selectedTile.col && hoveredTile.row === selectedTile.row) return
+
+    const regionW = gridSize * tileCountX
+    const regionH = gridSize * tileCountY
+    const hovW = Math.min(regionW, image.width - hoveredTile.col * gridSize)
+    const hovH = Math.min(regionH, image.height - hoveredTile.row * gridSize)
+
+    ctx.fillStyle = 'rgba(99, 102, 241, 0.25)'
+    ctx.fillRect(
+      hoveredTile.col * gridSize,
+      hoveredTile.row * gridSize,
+      hovW,
+      hovH,
+    )
+    ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'
+    ctx.lineWidth = 2
+    ctx.strokeRect(
+      hoveredTile.col * gridSize + 1,
+      hoveredTile.row * gridSize + 1,
+      hovW - 2,
+      hovH - 2,
+    )
+  }, [hoveredTile, image, gridSize, tileCountX, tileCountY, selectedTile])
 
   // Center image on load
   useEffect(() => {
@@ -263,21 +279,40 @@ export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selecte
         onMouseLeave={handleMouseLeave}
       >
         {image ? (
-          <canvas
-            ref={canvasRef}
+          <div
             style={{
               position: 'absolute',
               left: offset.x,
               top: offset.y,
               width: canvasWidth * zoom,
               height: canvasHeight * zoom,
-              imageRendering: 'pixelated',
-              background: `
-                repeating-conic-gradient(#1a1a2e 0% 25%, #0f0f1e 0% 50%)
-                50% / 16px 16px
-              `,
             }}
-          />
+          >
+            <canvas
+              ref={canvasRef}
+              style={{
+                width: '100%',
+                height: '100%',
+                imageRendering: 'pixelated',
+                background: `
+                  repeating-conic-gradient(#1a1a2e 0% 25%, #0f0f1e 0% 50%)
+                  50% / 16px 16px
+                `,
+              }}
+            />
+            <canvas
+              ref={hoverOverlayRef}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                width: '100%',
+                height: '100%',
+                imageRendering: 'pixelated',
+                pointerEvents: 'none',
+              }}
+            />
+          </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-text-muted">
             <div className="text-center">
