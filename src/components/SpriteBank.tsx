@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useState, memo } from 'react'
 import { Package, Trash2, X, Copy } from 'lucide-react'
 import type { SpriteEntry } from '../App'
 import { ConfirmDialog } from './ConfirmDialog'
+import { useEditableField } from '../hooks/useEditableField'
 
 interface SpriteBankProps {
   sprites: SpriteEntry[]
@@ -21,7 +22,8 @@ const SpriteThumb = memo(function SpriteThumb({ sprite }: { sprite: SpriteEntry 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
     canvas.width = sprite.width
     canvas.height = sprite.height
     ctx.imageSmoothingEnabled = false
@@ -52,8 +54,14 @@ export function SpriteBank({
   onOpenExport,
 }: SpriteBankProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [editingNameId, setEditingNameId] = useState<string | null>(null)
-  const [editingNameValue, setEditingNameValue] = useState('')
+  const {
+    editingId: editingNameId,
+    editingValue: editingNameValue,
+    setEditingValue: setEditingNameValue,
+    startEditing: startRename,
+    commitEditing: commitRename,
+    cancelEditing: cancelRename,
+  } = useEditableField(onRename)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<number | null>(null)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -74,18 +82,6 @@ export function SpriteBank({
     onClearAll()
     setShowClearConfirm(false)
   }, [onClearAll])
-
-  const startRename = useCallback((id: string, currentName: string) => {
-    setEditingNameId(id)
-    setEditingNameValue(currentName)
-  }, [])
-
-  const commitRename = useCallback(() => {
-    if (editingNameId && editingNameValue.trim()) {
-      onRename(editingNameId, editingNameValue.trim())
-    }
-    setEditingNameId(null)
-  }, [editingNameId, editingNameValue, onRename])
 
   const handleDragStart = useCallback((e: React.DragEvent, idx: number) => {
     setDragIndex(idx)
@@ -179,7 +175,7 @@ export function SpriteBank({
                       onBlur={commitRename}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') commitRename()
-                        if (e.key === 'Escape') setEditingNameId(null)
+                        if (e.key === 'Escape') cancelRename()
                         e.stopPropagation()
                       }}
                       onClick={(e) => e.stopPropagation()}
@@ -219,10 +215,10 @@ export function SpriteBank({
             onClick={onOpenExport}
             disabled={sprites.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-            aria-label="Export sprite sheet"
+            aria-label="Export"
           >
             <Package size={13} />
-            Export .zip
+            Export
           </button>
           <button
             onClick={handleClearAll}

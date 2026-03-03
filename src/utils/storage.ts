@@ -23,6 +23,9 @@ export interface ProjectData {
 }
 
 function openDB(): Promise<IDBDatabase> {
+  if (typeof indexedDB === 'undefined') {
+    return Promise.reject(new Error('IndexedDB not available'))
+  }
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
@@ -66,43 +69,56 @@ export async function saveProject(
   tileCountX: number,
   tileCountY: number,
   image: HTMLImageElement | null,
-): Promise<void> {
-  let imageDataUrl: string | null = null
-  if (image) {
-    const canvas = document.createElement('canvas')
-    canvas.width = image.width
-    canvas.height = image.height
-    const ctx = canvas.getContext('2d')!
-    ctx.drawImage(image, 0, 0)
-    imageDataUrl = canvas.toDataURL('image/png')
-  }
+): Promise<boolean> {
+  try {
+    let imageDataUrl: string | null = null
+    if (image) {
+      const canvas = document.createElement('canvas')
+      canvas.width = image.width
+      canvas.height = image.height
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.drawImage(image, 0, 0)
+        imageDataUrl = canvas.toDataURL('image/png')
+      }
+    }
 
-  const data: ProjectData = {
-    gridSize,
-    tileCountX,
-    tileCountY,
-    sprites: serializeSprites(sprites),
-    imageDataUrl,
-    savedAt: Date.now(),
-  }
+    const data: ProjectData = {
+      gridSize,
+      tileCountX,
+      tileCountY,
+      sprites: serializeSprites(sprites),
+      imageDataUrl,
+      savedAt: Date.now(),
+    }
 
-  const db = await openDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite')
-    tx.objectStore(STORE_NAME).put(data, PROJECT_KEY)
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-  })
+    const db = await openDB()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite')
+      tx.objectStore(STORE_NAME).put(data, PROJECT_KEY)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    return true
+  } catch (err) {
+    console.warn('[CatPix] Auto-save failed:', err)
+    return false
+  }
 }
 
 export async function loadProject(): Promise<ProjectData | null> {
-  const db = await openDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly')
-    const req = tx.objectStore(STORE_NAME).get(PROJECT_KEY)
-    req.onsuccess = () => resolve(req.result ?? null)
-    req.onerror = () => reject(req.error)
-  })
+  try {
+    const db = await openDB()
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly')
+      const req = tx.objectStore(STORE_NAME).get(PROJECT_KEY)
+      req.onsuccess = () => resolve(req.result ?? null)
+      req.onerror = () => reject(req.error)
+    })
+  } catch (err) {
+    console.warn('[CatPix] Failed to load project:', err)
+    return null
+  }
 }
 
 export async function hasProject(): Promise<boolean> {

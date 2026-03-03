@@ -162,7 +162,8 @@ export function downscaleMode(imageData: ImageData, factor: number): ImageData {
       }
 
       const di = (y * dstW + x) * 4
-      const best = freq.get(bestKey)!
+      const best = freq.get(bestKey)
+      if (!best) continue
       dstData[di] = Math.round(best.r / best.count)
       dstData[di + 1] = Math.round(best.g / best.count)
       dstData[di + 2] = Math.round(best.b / best.count)
@@ -288,8 +289,11 @@ export function quantizeColors(imageData: ImageData, threshold: number): ImageDa
  * Slice an ImageData into a grid of tiles.
  */
 export function sliceIntoTiles(imageData: ImageData, tileW: number, tileH: number): ImageData[] {
-  const canvas = new OffscreenCanvas(imageData.width, imageData.height)
-  const ctx = canvas.getContext('2d')!
+  const canvas = document.createElement('canvas')
+  canvas.width = imageData.width
+  canvas.height = imageData.height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return []
   ctx.putImageData(imageData, 0, 0)
 
   const tiles: ImageData[] = []
@@ -352,7 +356,8 @@ export function detectBackgroundColor(imageData: ImageData): { r: number; g: num
     }
   }
 
-  const best = freq.get(bestKey)!
+  const best = freq.get(bestKey)
+  if (!best) return { r: 0, g: 0, b: 0, a: 0 }
   return {
     r: Math.round(best.r / best.count),
     g: Math.round(best.g / best.count),

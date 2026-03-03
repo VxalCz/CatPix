@@ -1,7 +1,23 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { Eye, EyeOff, Trash2, Plus, Layers } from 'lucide-react'
-import type { Layer } from '../state/layers'
+import type { Layer, LayerBlendMode } from '../state/layers'
 import { MAX_LAYERS } from '../state/layers'
+import { useEditableField } from '../hooks/useEditableField'
+
+const BLEND_MODES: { value: LayerBlendMode; label: string }[] = [
+  { value: 'source-over', label: 'Normal' },
+  { value: 'multiply', label: 'Multiply' },
+  { value: 'screen', label: 'Screen' },
+  { value: 'overlay', label: 'Overlay' },
+  { value: 'hard-light', label: 'Hard Light' },
+  { value: 'soft-light', label: 'Soft Light' },
+  { value: 'color-dodge', label: 'Color Dodge' },
+  { value: 'color-burn', label: 'Color Burn' },
+  { value: 'difference', label: 'Difference' },
+  { value: 'exclusion', label: 'Exclusion' },
+  { value: 'lighten', label: 'Lighten' },
+  { value: 'darken', label: 'Darken' },
+]
 
 interface LayerPanelProps {
   layers: Layer[]
@@ -12,6 +28,7 @@ interface LayerPanelProps {
   onSetVisibility: (id: string, visible: boolean) => void
   onSetOpacity: (id: string, opacity: number) => void
   onSetName: (id: string, name: string) => void
+  onSetBlendMode: (id: string, blendMode: LayerBlendMode) => void
   onReorder: (fromIndex: number, toIndex: number) => void
 }
 
@@ -24,24 +41,19 @@ export function LayerPanel({
   onSetVisibility,
   onSetOpacity,
   onSetName,
+  onSetBlendMode,
   onReorder,
 }: LayerPanelProps) {
-  const [editingNameId, setEditingNameId] = useState<string | null>(null)
-  const [editingNameValue, setEditingNameValue] = useState('')
+  const {
+    editingId: editingNameId,
+    editingValue: editingNameValue,
+    setEditingValue: setEditingNameValue,
+    startEditing: startRename,
+    commitEditing: commitRename,
+    cancelEditing: cancelRename,
+  } = useEditableField(onSetName)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<number | null>(null)
-
-  const startRename = useCallback((id: string, currentName: string) => {
-    setEditingNameId(id)
-    setEditingNameValue(currentName)
-  }, [])
-
-  const commitRename = useCallback(() => {
-    if (editingNameId && editingNameValue.trim()) {
-      onSetName(editingNameId, editingNameValue.trim())
-    }
-    setEditingNameId(null)
-  }, [editingNameId, editingNameValue, onSetName])
 
   if (layers.length === 0) return null
 
@@ -129,7 +141,7 @@ export function LayerPanel({
                     onBlur={commitRename}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') commitRename()
-                      if (e.key === 'Escape') setEditingNameId(null)
+                      if (e.key === 'Escape') cancelRename()
                       e.stopPropagation()
                     }}
                     onClick={(e) => e.stopPropagation()}
@@ -154,6 +166,22 @@ export function LayerPanel({
                 className="w-12 accent-accent"
                 title={`Opacity: ${Math.round(layer.opacity * 100)}%`}
               />
+
+              {/* Blend mode */}
+              <select
+                value={layer.blendMode}
+                onChange={(e) => {
+                  e.stopPropagation()
+                  onSetBlendMode(layer.id, e.target.value as LayerBlendMode)
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="text-[9px] bg-bg-primary border border-border-default text-text-secondary rounded px-0.5 py-0.5 cursor-pointer focus:outline-none focus:border-accent"
+                title="Blend mode"
+              >
+                {BLEND_MODES.map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
 
               {/* Delete */}
               <button

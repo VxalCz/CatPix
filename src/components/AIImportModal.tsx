@@ -31,6 +31,7 @@ export function AIImportModal({ gridSize, onImport, onLoadAsTileset, onClose }: 
   const [sourceImageData, setSourceImageData] = useState<ImageData | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Detection results
   const [candidates, setCandidates] = useState<ScaleCandidate[]>([])
@@ -56,6 +57,11 @@ export function AIImportModal({ gridSize, onImport, onLoadAsTileset, onClose }: 
 
   const loadImageFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) return
+    setError(null)
+    if (file.size > 50 * 1024 * 1024) {
+      setError('File is too large (max 50 MB).')
+      return
+    }
     const reader = new FileReader()
     reader.onload = () => {
       const img = new Image()
@@ -65,7 +71,8 @@ export function AIImportModal({ gridSize, onImport, onLoadAsTileset, onClose }: 
         const canvas = document.createElement('canvas')
         canvas.width = img.width
         canvas.height = img.height
-        const ctx = canvas.getContext('2d')!
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
         ctx.drawImage(img, 0, 0)
         const imgData = ctx.getImageData(0, 0, img.width, img.height)
         setSourceImageData(imgData)
@@ -77,7 +84,13 @@ export function AIImportModal({ gridSize, onImport, onLoadAsTileset, onClose }: 
           setScaleFactor(results[0].factor)
         }
       }
+      img.onerror = () => {
+        setError('Failed to load the image. The file may be corrupt or unsupported.')
+      }
       img.src = reader.result as string
+    }
+    reader.onerror = () => {
+      setError('Failed to read the image file.')
     }
     reader.readAsDataURL(file)
   }, [])
@@ -140,7 +153,8 @@ export function AIImportModal({ gridSize, onImport, onLoadAsTileset, onClose }: 
   useEffect(() => {
     if (step !== 'preview' || !downscaled || !previewCanvasRef.current) return
     const canvas = previewCanvasRef.current
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
 
     // Fit into display area
     const maxDim = 256
@@ -158,8 +172,11 @@ export function AIImportModal({ gridSize, onImport, onLoadAsTileset, onClose }: 
     }
 
     // Draw downscaled image
-    const tmpCanvas = new OffscreenCanvas(downscaled.width, downscaled.height)
-    const tmpCtx = tmpCanvas.getContext('2d')!
+    const tmpCanvas = document.createElement('canvas')
+    tmpCanvas.width = downscaled.width
+    tmpCanvas.height = downscaled.height
+    const tmpCtx = tmpCanvas.getContext('2d')
+    if (!tmpCtx) return
     tmpCtx.putImageData(downscaled, 0, 0)
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(tmpCanvas, 0, 0, canvas.width, canvas.height)
@@ -203,6 +220,13 @@ export function AIImportModal({ gridSize, onImport, onLoadAsTileset, onClose }: 
             <X size={16} />
           </button>
         </div>
+
+        {/* Error banner */}
+        {error && (
+          <div className="px-4 py-2 bg-red-900/40 border-b border-red-700/50 text-xs text-red-300">
+            {error}
+          </div>
+        )}
 
         {/* Body */}
         <div className="p-4 overflow-y-auto flex-1">
@@ -606,7 +630,8 @@ function SpriteThumbnail({ imageData }: { imageData: ImageData }) {
     if (!canvas) return
     canvas.width = 48
     canvas.height = 48
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
 
     // Checkerboard background
     for (let y = 0; y < 48; y += 4) {
@@ -616,8 +641,11 @@ function SpriteThumbnail({ imageData }: { imageData: ImageData }) {
       }
     }
 
-    const tmp = new OffscreenCanvas(imageData.width, imageData.height)
-    const tmpCtx = tmp.getContext('2d')!
+    const tmp = document.createElement('canvas')
+    tmp.width = imageData.width
+    tmp.height = imageData.height
+    const tmpCtx = tmp.getContext('2d')
+    if (!tmpCtx) return
     tmpCtx.putImageData(imageData, 0, 0)
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(tmp, 0, 0, 48, 48)

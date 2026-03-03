@@ -1,7 +1,8 @@
 import type { AppState, AppAction } from './appReducer'
 import { appReducer, UNDOABLE_ACTIONS } from './appReducer'
 
-const MAX_HISTORY = 50
+/** Maximum number of undo snapshots to keep in memory */
+export const MAX_UNDO_HISTORY = 50
 
 /** Lightweight snapshot — only the data that actually matters for undo. */
 export interface PartialSnapshot {
@@ -69,13 +70,17 @@ export function undoReducer(state: UndoState, action: UndoAction): UndoState {
     }
   }
 
+  if (action.type === 'NEW_PROJECT') {
+    return { past: [], present: appReducer(state.present, action), future: [] }
+  }
+
   const newPresent = appReducer(state.present, action)
   if (newPresent === state.present) return state
 
   // Only snapshot for undoable actions
   if (UNDOABLE_ACTIONS.has(action.type)) {
     const newPast = [...state.past, takeSnapshot(state.present)]
-    if (newPast.length > MAX_HISTORY) {
+    if (newPast.length > MAX_UNDO_HISTORY) {
       newPast.shift()
     }
     return {

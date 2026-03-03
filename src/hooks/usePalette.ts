@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { rgbaToHex } from '../utils/colorUtils'
 
 export interface PaletteColor {
   r: number
@@ -11,19 +12,6 @@ export interface PaletteColor {
 
 const MAX_PALETTE = 64
 
-function rgbaToHex(r: number, g: number, b: number, a: number): string {
-  if (a < 255) {
-    return (
-      '#' +
-      [r, g, b, a].map((v) => v.toString(16).padStart(2, '0')).join('')
-    )
-  }
-  return (
-    '#' +
-    [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')
-  )
-}
-
 export function usePalette(image: HTMLImageElement | null) {
   return useMemo(() => {
     if (!image) return { colors: [], truncated: false, totalUnique: 0 }
@@ -31,7 +19,8 @@ export function usePalette(image: HTMLImageElement | null) {
     const canvas = document.createElement('canvas')
     canvas.width = image.width
     canvas.height = image.height
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return { colors: [], truncated: false, totalUnique: 0 }
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(image, 0, 0)
 
@@ -56,7 +45,7 @@ export function usePalette(image: HTMLImageElement | null) {
     }
 
     const totalUnique = colorMap.size
-    const truncated = totalUnique > 256
+    const truncated = totalUnique > MAX_PALETTE
 
     // Sort by frequency (most used first)
     const sorted = Array.from(colorMap.values())

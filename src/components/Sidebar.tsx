@@ -1,12 +1,13 @@
 import {
   Upload, Grid3x3, Pencil, Eraser, AlertTriangle, Palette, FilePlus,
   ChevronDown, Sparkles, PaintBucket, Pipette, Minus, Square, BoxSelect,
-  Undo2, Redo2, Save, FolderOpen, Download, Sun, Moon,
+  Undo2, Redo2, Save, FolderOpen, Download, Sun, Moon, Circle, Wand2,
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { parsePalette } from '../utils/parsePalette'
 import type { PaletteColor } from '../hooks/usePalette'
 import { presetPalettes } from '../data/presetPalettes'
-import type { Tool } from '../state/appReducer'
+import type { Tool, BrushShape, SelectionMode } from '../state/appReducer'
 
 export type { Tool } from '../state/appReducer'
 
@@ -24,6 +25,14 @@ interface SidebarProps {
   onToolChange: (tool: Tool) => void
   activeColor: string
   onColorChange: (color: string) => void
+  brushSize: number
+  onBrushSizeChange: (size: number) => void
+  brushShape: BrushShape
+  onBrushShapeChange: (shape: BrushShape) => void
+  selectionMode: SelectionMode
+  onSelectionModeChange: (mode: SelectionMode) => void
+  magicTolerance: number
+  onMagicToleranceChange: (tolerance: number) => void
   palette: PaletteColor[]
   paletteTruncated: boolean
   paletteTotalUnique: number
@@ -43,6 +52,7 @@ const tools: { icon: typeof Pencil; label: string; key: Tool }[] = [
   { icon: Pipette, label: 'Eyedropper (I)', key: 'eyedropper' },
   { icon: Minus, label: 'Line (L)', key: 'line' },
   { icon: Square, label: 'Rectangle (R)', key: 'rectangle' },
+  { icon: Circle, label: 'Ellipse (O)', key: 'ellipse' },
   { icon: BoxSelect, label: 'Selection (M)', key: 'selection' },
 ]
 
@@ -60,6 +70,14 @@ export function Sidebar({
   onToolChange,
   activeColor,
   onColorChange,
+  brushSize,
+  onBrushSizeChange,
+  brushShape,
+  onBrushShapeChange,
+  selectionMode,
+  onSelectionModeChange,
+  magicTolerance,
+  onMagicToleranceChange,
   palette,
   paletteTruncated,
   paletteTotalUnique,
@@ -76,6 +94,8 @@ export function Sidebar({
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return (localStorage.getItem('catpix-theme') as 'dark' | 'light') ?? 'dark'
   })
+  const [importedPalette, setImportedPalette] = useState<string[] | null>(null)
+  const paletteImportRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -201,6 +221,103 @@ export function Sidebar({
             </button>
           ))}
         </div>
+
+        {/* Brush Size - only for draw/erase */}
+        {(activeTool === 'draw' || activeTool === 'erase') && (
+          <div className="mt-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-text-muted">Size</span>
+              <input
+                type="range"
+                min={1}
+                max={16}
+                value={brushSize}
+                onChange={(e) => onBrushSizeChange(Number(e.target.value))}
+                className="flex-1 accent-accent"
+              />
+              <span className="text-xs text-text-primary font-mono w-4 text-right">{brushSize}</span>
+            </div>
+            <div className="flex gap-1 mt-1">
+              <button
+                onClick={() => onBrushShapeChange('square')}
+                className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[10px] transition-colors cursor-pointer ${
+                  brushShape === 'square'
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-hover text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <Square size={10} />
+                Square
+              </button>
+              <button
+                onClick={() => onBrushShapeChange('circle')}
+                className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[10px] transition-colors cursor-pointer ${
+                  brushShape === 'circle'
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-hover text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <Circle size={10} />
+                Circle
+              </button>
+              <button
+                onClick={() => onBrushShapeChange('dither')}
+                className={`flex-1 flex items-center justify-center py-1 rounded text-[10px] transition-colors cursor-pointer ${
+                  brushShape === 'dither'
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-hover text-text-secondary hover:text-text-primary'
+                }`}
+                title="Dithering (checkerboard pattern)"
+              >
+                Dither
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Selection Mode - only for selection tool */}
+        {activeTool === 'selection' && (
+          <div className="mt-2">
+            <div className="flex gap-1">
+              <button
+                onClick={() => onSelectionModeChange('box')}
+                className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[10px] transition-colors cursor-pointer ${
+                  selectionMode === 'box'
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-hover text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <BoxSelect size={10} />
+                Box
+              </button>
+              <button
+                onClick={() => onSelectionModeChange('magic')}
+                className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[10px] transition-colors cursor-pointer ${
+                  selectionMode === 'magic'
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-hover text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <Wand2 size={10} />
+                Magic
+              </button>
+            </div>
+            {selectionMode === 'magic' && (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[10px] text-text-muted">Tolerance</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={magicTolerance}
+                  onChange={(e) => onMagicToleranceChange(Number(e.target.value))}
+                  className="flex-1 accent-accent"
+                />
+                <span className="text-xs text-text-primary font-mono w-4 text-right">{magicTolerance}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Active Color */}
@@ -233,12 +350,53 @@ export function Sidebar({
 
       {/* Palette */}
       <div className="p-3 border-b border-border-default flex-1 overflow-y-auto min-h-0">
-        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
-          <span className="inline-flex items-center gap-1.5">
-            <Palette size={12} />
-            Palette
-          </span>
-        </h3>
+        <input
+          ref={paletteImportRef}
+          type="file"
+          accept=".hex,.gpl"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (!file) return
+            const reader = new FileReader()
+            reader.onload = () => {
+              const colors = parsePalette(reader.result as string, file.name)
+              if (colors.length > 0) {
+                setImportedPalette(colors)
+                onColorChange(colors[0])
+              }
+            }
+            reader.readAsText(file)
+            e.target.value = ''
+          }}
+        />
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+            <span className="inline-flex items-center gap-1.5">
+              <Palette size={12} />
+              Palette
+            </span>
+          </h3>
+          <div className="flex gap-1">
+            <button
+              onClick={() => paletteImportRef.current?.click()}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-bg-hover text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+              title="Import palette (.hex or .gpl)"
+            >
+              <FolderOpen size={10} />
+              Import
+            </button>
+            {importedPalette && (
+              <button
+                onClick={() => setImportedPalette(null)}
+                className="px-1.5 py-0.5 rounded text-[10px] bg-bg-hover text-text-muted hover:text-text-primary transition-colors cursor-pointer"
+                title="Clear imported palette"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
 
         {/* Preset selector */}
         <div className="relative mb-2">
@@ -342,7 +500,29 @@ export function Sidebar({
           </>
         )}
 
-        {!displayColors && !displayPreset && (
+        {/* Imported palette */}
+        {importedPalette && (
+          <>
+            <p className="text-[10px] text-text-muted mb-1 mt-2">Imported ({importedPalette.length})</p>
+            <div className="grid grid-cols-6 gap-0.5">
+              {importedPalette.map((hex) => (
+                <button
+                  key={hex}
+                  onClick={() => onColorChange(hex)}
+                  className={`w-full aspect-square rounded-sm border cursor-pointer transition-transform hover:scale-110 ${
+                    activeColor === hex
+                      ? 'border-white ring-1 ring-white scale-110'
+                      : 'border-border-default'
+                  }`}
+                  style={{ backgroundColor: hex }}
+                  title={hex}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        {!displayColors && !displayPreset && !importedPalette && (
           <p className="text-[11px] text-text-muted">Upload an image or pick a preset palette</p>
         )}
       </div>

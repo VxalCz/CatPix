@@ -1,8 +1,12 @@
 import type { SpriteEntry } from '../App'
-import type { Layer } from './layers'
+import type { Layer, LayerBlendMode } from './layers'
 import { createLayerFromImageData, createLayer } from './layers'
 
-export type Tool = 'draw' | 'erase' | 'fill' | 'eyedropper' | 'line' | 'rectangle' | 'selection'
+export type Tool = 'draw' | 'erase' | 'fill' | 'eyedropper' | 'line' | 'rectangle' | 'ellipse' | 'selection'
+
+export type BrushShape = 'square' | 'circle' | 'dither'
+
+export type SelectionMode = 'box' | 'magic'
 
 export interface AppState {
   image: HTMLImageElement | null
@@ -13,6 +17,10 @@ export interface AppState {
   tileData: ImageData | null
   activeTool: Tool
   activeColor: string
+  brushSize: number
+  brushShape: BrushShape
+  selectionMode: SelectionMode
+  magicTolerance: number
   sprites: SpriteEntry[]
   editingBankIndex: number | null
   showExportModal: boolean
@@ -32,6 +40,10 @@ export const initialState: AppState = {
   tileData: null,
   activeTool: 'draw',
   activeColor: '#000000',
+  brushSize: 1,
+  brushShape: 'square',
+  selectionMode: 'box',
+  magicTolerance: 32,
   sprites: [],
   editingBankIndex: null,
   showExportModal: false,
@@ -50,6 +62,10 @@ export type AppAction =
   | { type: 'SET_TILE_DATA'; tileData: ImageData | null }
   | { type: 'SET_ACTIVE_TOOL'; tool: Tool }
   | { type: 'SET_ACTIVE_COLOR'; color: string }
+  | { type: 'SET_BRUSH_SIZE'; size: number }
+  | { type: 'SET_BRUSH_SHAPE'; shape: BrushShape }
+  | { type: 'SET_SELECTION_MODE'; mode: SelectionMode }
+  | { type: 'SET_MAGIC_TOLERANCE'; tolerance: number }
   | { type: 'SET_SPRITES'; sprites: SpriteEntry[] }
   | { type: 'SET_EDITING_BANK_INDEX'; index: number | null }
   | { type: 'SET_SHOW_EXPORT_MODAL'; show: boolean }
@@ -77,6 +93,7 @@ export type AppAction =
   | { type: 'SET_LAYER_NAME'; layerId: string; name: string }
   | { type: 'REORDER_LAYERS'; fromIndex: number; toIndex: number }
   | { type: 'UPDATE_ACTIVE_LAYER'; imageData: ImageData }
+  | { type: 'SET_LAYER_BLEND_MODE'; layerId: string; blendMode: LayerBlendMode }
   | { type: 'COMMIT_STROKE' }
   | { type: 'CLEAR_ALL_SPRITES' }
 
@@ -96,6 +113,10 @@ export const UNDOABLE_ACTIONS = new Set<AppAction['type']>([
   'REMOVE_LAYER',
   'REORDER_LAYERS',
   'CLEAR_ALL_SPRITES',
+  'SET_LAYER_VISIBILITY',
+  'SET_LAYER_OPACITY',
+  'SET_LAYER_BLEND_MODE',
+  'SET_LAYER_NAME',
 ])
 
 function initLayersFromTileData(tileData: ImageData): { layers: Layer[]; activeLayerId: string } {
@@ -121,6 +142,14 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, activeTool: action.tool }
     case 'SET_ACTIVE_COLOR':
       return { ...state, activeColor: action.color }
+    case 'SET_BRUSH_SIZE':
+      return { ...state, brushSize: action.size }
+    case 'SET_BRUSH_SHAPE':
+      return { ...state, brushShape: action.shape }
+    case 'SET_SELECTION_MODE':
+      return { ...state, selectionMode: action.mode }
+    case 'SET_MAGIC_TOLERANCE':
+      return { ...state, magicTolerance: action.tolerance }
     case 'SET_SPRITES':
       return { ...state, sprites: action.sprites }
     case 'SET_EDITING_BANK_INDEX':
@@ -342,6 +371,14 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ),
       }
     }
+
+    case 'SET_LAYER_BLEND_MODE':
+      return {
+        ...state,
+        layers: state.layers.map((l) =>
+          l.id === action.layerId ? { ...l, blendMode: action.blendMode } : l,
+        ),
+      }
 
     case 'COMMIT_STROKE':
       // No-op: exists solely as a snapshot trigger for undo

@@ -11,10 +11,12 @@ import { AIImportModal } from './components/AIImportModal'
 import { LayerPanel } from './components/LayerPanel'
 import { usePalette } from './hooks/usePalette'
 import { exportProject, exportCatPixProject, type ExportOptions } from './utils/exportProject'
+import { exportGif, type GifExportOptions } from './utils/exportGif'
 import { flattenLayers } from './state/layers'
 import { saveProject, loadProject, restoreSprites, restoreImage } from './utils/storage'
 import { initialState } from './state/appReducer'
 import type { AppAction } from './state/appReducer'
+import type { LayerBlendMode } from './state/layers'
 import { undoReducer, createUndoState } from './state/undoReducer'
 import type { UndoAction } from './state/undoReducer'
 import { AppStateContext, AppDispatchContext } from './state/AppContext'
@@ -27,7 +29,7 @@ export interface SpriteEntry {
   imageData: ImageData
 }
 
-let spriteCounter = 0
+let spriteNameCounter = 0
 
 function App() {
   const [undoState, dispatch] = useReducer(undoReducer, initialState, createUndoState)
@@ -38,10 +40,15 @@ function App() {
   const {
     image, gridSize, tileCountX, tileCountY,
     selectedTile, tileData, activeTool, activeColor,
+    brushSize, brushShape,
+    selectionMode, magicTolerance,
     sprites, editingBankIndex,
     showExportModal, showNewProjectModal, showAIImportModal,
     layers, activeLayerId,
   } = state
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const compositorCanvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'))
 
   // Active layer's imageData for the pixel editor
   const activeLayer = useMemo(() => layers.find((l) => l.id === activeLayerId) ?? null, [layers, activeLayerId])
@@ -52,9 +59,6 @@ function App() {
     if (layers.length === 0) return tileData
     return flattenLayers(layers, compositorCanvasRef.current)
   }, [layers, tileData])
-
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const compositorCanvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'))
 
   // Type-safe dispatch wrapper that handles both undo actions and app actions
   const appDispatch = useCallback((action: UndoAction) => {
@@ -84,6 +88,12 @@ function App() {
     const file = e.target.files?.[0]
     if (!file) return
 
+    const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
+    if (file.size > MAX_FILE_SIZE) {
+      alert('File is too large (max 50 MB).')
+      return
+    }
+
     const reader = new FileReader()
     reader.onload = () => {
       const img = new window.Image()
@@ -91,6 +101,9 @@ function App() {
         dispatch({ type: 'LOAD_IMAGE', image: img })
       }
       img.src = reader.result as string
+    }
+    reader.onerror = () => {
+      alert('Failed to read the image file.')
     }
     reader.readAsDataURL(file)
     e.target.value = ''
@@ -108,7 +121,8 @@ function App() {
       const offscreen = document.createElement('canvas')
       offscreen.width = image.width
       offscreen.height = image.height
-      const ctx = offscreen.getContext('2d')!
+      const ctx = offscreen.getContext('2d')
+      if (!ctx) return
       ctx.imageSmoothingEnabled = false
       ctx.drawImage(image, 0, 0)
 
@@ -153,10 +167,10 @@ function App() {
       flat.height,
     )
 
-    spriteCounter++
+    spriteNameCounter++
     const entry: SpriteEntry = {
-      id: `sprite_${spriteCounter}_${Date.now()}`,
-      name: `sprite_${String(spriteCounter).padStart(3, '0')}`,
+      id: crypto.randomUUID(),
+      name: `sprite_${String(spriteNameCounter).padStart(3, '0')}`,
       width: flat.width,
       height: flat.height,
       imageData: cloned,
@@ -191,9 +205,8 @@ function App() {
     const source = sprites.find((s) => s.id === id)
     if (!source) return
 
-    spriteCounter++
     const clone: SpriteEntry = {
-      id: `sprite_${spriteCounter}_${Date.now()}`,
+      id: crypto.randomUUID(),
       name: `${source.name}_copy`,
       width: source.width,
       height: source.height,
@@ -227,13 +240,22 @@ function App() {
     [sprites],
   )
 
+  const handleExportGif = useCallback(
+    (options: GifExportOptions) => {
+      dispatch({ type: 'SET_SHOW_EXPORT_MODAL', show: false })
+      exportGif(sprites, options)
+    },
+    [sprites],
+  )
+
   const handleAILoadAsTileset = useCallback((imageData: ImageData, tileSize: number) => {
     dispatch({ type: 'AI_LOAD_AS_TILESET', gridSize: tileSize })
 
     const canvas = document.createElement('canvas')
     canvas.width = imageData.width
     canvas.height = imageData.height
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
     ctx.putImageData(imageData, 0, 0)
     const dataUrl = canvas.toDataURL('image/png')
     const img = new window.Image()
@@ -243,10 +265,10 @@ function App() {
 
   const handleAIImport = useCallback((tiles: ImageData[]) => {
     const newEntries: SpriteEntry[] = tiles.map((tile) => {
-      spriteCounter++
+      spriteNameCounter++
       return {
-        id: `sprite_${spriteCounter}_${Date.now()}`,
-        name: `sprite_${String(spriteCounter).padStart(3, '0')}`,
+        id: crypto.randomUUID(),
+        name: `sprite_${String(spriteNameCounter).padStart(3, '0')}`,
         width: tile.width,
         height: tile.height,
         imageData: tile,
@@ -294,7 +316,8 @@ function App() {
       const canvas = document.createElement('canvas')
       canvas.width = image.width
       canvas.height = image.height
-      const ctx = canvas.getContext('2d')!
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
       ctx.drawImage(image, 0, 0)
       imageDataUrl = canvas.toDataURL('image/png')
     }
@@ -376,6 +399,7 @@ function App() {
       if (e.key === 'i' || e.key === 'I') dispatch({ type: 'SET_ACTIVE_TOOL', tool: 'eyedropper' })
       if (e.key === 'l' || e.key === 'L') dispatch({ type: 'SET_ACTIVE_TOOL', tool: 'line' })
       if (e.key === 'r' && !e.ctrlKey && !e.metaKey) dispatch({ type: 'SET_ACTIVE_TOOL', tool: 'rectangle' })
+      if (e.key === 'o' || e.key === 'O') dispatch({ type: 'SET_ACTIVE_TOOL', tool: 'ellipse' })
       if (e.key === 'm' || e.key === 'M') dispatch({ type: 'SET_ACTIVE_TOOL', tool: 'selection' })
 
       // Navigate sprites with [ and ]
@@ -426,6 +450,14 @@ function App() {
               onToolChange={(tool) => dispatch({ type: 'SET_ACTIVE_TOOL', tool })}
               activeColor={activeColor}
               onColorChange={(color) => dispatch({ type: 'SET_ACTIVE_COLOR', color })}
+              brushSize={brushSize}
+              onBrushSizeChange={(size) => dispatch({ type: 'SET_BRUSH_SIZE', size })}
+              brushShape={brushShape}
+              onBrushShapeChange={(shape) => dispatch({ type: 'SET_BRUSH_SHAPE', shape })}
+              selectionMode={selectionMode}
+              onSelectionModeChange={(mode) => dispatch({ type: 'SET_SELECTION_MODE', mode })}
+              magicTolerance={magicTolerance}
+              onMagicToleranceChange={(tolerance) => dispatch({ type: 'SET_MAGIC_TOLERANCE', tolerance })}
               palette={palette}
               paletteTruncated={paletteTruncated}
               paletteTotalUnique={paletteTotalUnique}
@@ -455,6 +487,10 @@ function App() {
                 compositeData={compositeTileData}
                 activeTool={activeTool}
                 activeColor={activeColor}
+                brushSize={brushSize}
+                brushShape={brushShape}
+                selectionMode={selectionMode}
+                magicTolerance={magicTolerance}
                 onionSkinData={onionSkinData}
                 isEditingBank={editingBankIndex !== null}
                 onClear={handleClearTile}
@@ -474,6 +510,7 @@ function App() {
                 onSetVisibility={(id, visible) => dispatch({ type: 'SET_LAYER_VISIBILITY', layerId: id, visible })}
                 onSetOpacity={(id, opacity) => dispatch({ type: 'SET_LAYER_OPACITY', layerId: id, opacity })}
                 onSetName={(id, name) => dispatch({ type: 'SET_LAYER_NAME', layerId: id, name })}
+                onSetBlendMode={(id, blendMode: LayerBlendMode) => dispatch({ type: 'SET_LAYER_BLEND_MODE', layerId: id, blendMode })}
                 onReorder={(from, to) => dispatch({ type: 'REORDER_LAYERS', fromIndex: from, toIndex: to })}
               />
               <AnimationPreview sprites={sprites} />
@@ -510,10 +547,9 @@ function App() {
           )}
           {showExportModal && sprites.length > 0 && (
             <ExportModal
-              spriteCount={sprites.length}
-              tileWidth={sprites[0].width}
-              tileHeight={sprites[0].height}
+              sprites={sprites}
               onExport={handleExport}
+              onExportGif={handleExportGif}
               onClose={() => dispatch({ type: 'SET_SHOW_EXPORT_MODAL', show: false })}
             />
           )}

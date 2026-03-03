@@ -20,11 +20,12 @@ interface SpriteFrame {
   height: number
 }
 
-function imageDataToCanvas(data: ImageData): HTMLCanvasElement {
+export function imageDataToCanvas(data: ImageData): HTMLCanvasElement {
   const c = document.createElement('canvas')
   c.width = data.width
   c.height = data.height
-  const ctx = c.getContext('2d')!
+  const ctx = c.getContext('2d')
+  if (!ctx) return c
   ctx.imageSmoothingEnabled = false
   ctx.putImageData(data, 0, 0)
   return c
@@ -128,7 +129,8 @@ export async function exportProject(
   const sheet = document.createElement('canvas')
   sheet.width = sheetWidth
   sheet.height = sheetHeight
-  const ctx = sheet.getContext('2d')!
+  const ctx = sheet.getContext('2d')
+  if (!ctx) return
   ctx.imageSmoothingEnabled = false
 
   const frames: SpriteFrame[] = []
@@ -152,8 +154,11 @@ export async function exportProject(
     })
   })
 
-  const pngBlob = await new Promise<Blob>((resolve) => {
-    sheet.toBlob((blob) => resolve(blob!), 'image/png')
+  const pngBlob = await new Promise<Blob>((resolve, reject) => {
+    sheet.toBlob((blob) => {
+      if (blob) resolve(blob)
+      else reject(new Error('Failed to encode sprite sheet as PNG'))
+    }, 'image/png')
   })
 
   const zip = new JSZip()
@@ -180,8 +185,11 @@ export async function exportProject(
     const folder = zip.folder('individual')!
     for (const sprite of sprites) {
       const canvas = imageDataToCanvas(sprite.imageData)
-      const blob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob((b) => resolve(b!), 'image/png')
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((b) => {
+          if (b) resolve(b)
+          else reject(new Error(`Failed to encode ${sprite.name} as PNG`))
+        }, 'image/png')
       })
       folder.file(`${sprite.name}.png`, blob)
     }
@@ -223,8 +231,11 @@ export async function exportCatPixProject(
   const spritesFolder = zip.folder('sprites')!
   for (const sprite of sprites) {
     const canvas = imageDataToCanvas(sprite.imageData)
-    const blob = await new Promise<Blob>((resolve) => {
-      canvas.toBlob((b) => resolve(b!), 'image/png')
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b)
+        else reject(new Error(`Failed to encode ${sprite.name} as PNG`))
+      }, 'image/png')
     })
     spritesFolder.file(`${sprite.name}.png`, blob)
   }
@@ -272,7 +283,8 @@ export async function importCatPixProject(file: File): Promise<{
     const canvas = document.createElement('canvas')
     canvas.width = imageBitmap.width
     canvas.height = imageBitmap.height
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) continue
     ctx.drawImage(imageBitmap, 0, 0)
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
 
