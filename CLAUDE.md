@@ -19,80 +19,139 @@ No test runner is configured.
 
 ## Architecture
 
-**CatPix** is a browser-based tileset editor and pixel sprite studio. The entire app is client-side — no backend, no persistence.
+**CatPix** is a browser-based tileset editor and pixel sprite studio. The entire app is client-side — no backend, no persistence beyond browser storage.
 
 ### Data flow
 
 1. User uploads an image → stored as `HTMLImageElement` in `App` state
 2. User clicks a tile in `TilesetViewer` → `App` calls `getImageData` on an offscreen canvas → `tileData: ImageData` is passed to `PixelEditor`
-3. User paints pixels → `PixelEditor` mutates a copy of the `ImageData` and fires `onTileDataChange` back to `App`
-4. User clicks "Save to Bank" → `App` clones the `ImageData` into a `SpriteEntry` in the `sprites[]` array
-5. User exports → `exportProject()` composites all sprites onto a sheet canvas, builds a JSON atlas, zips both with JSZip, and triggers a download
+3. User paints pixels → `PixelEditor` mutates layers and fires `onTileDataChange` back to `App`
+4. User clicks "Save to Bank" → `App` clones the flattened `ImageData` into a `SpriteEntry` in `sprites[]`
+5. User exports → `exportProject()` (spritesheet ZIP) or `exportGif()` (animated GIF)
 
 ### State ownership
 
-All meaningful state lives in `App.tsx`:
+Global state lives in `App.tsx` managed via `useReducer` → `appReducer.ts` (wrapped by `undoReducer.ts` for undo/redo). Contexts: `AppStateContext` / `AppDispatchContext`.
+
+Key state fields:
 - `image` — the loaded `HTMLImageElement`
 - `gridSize` — tile size in px (8–128, step 8)
-- `tileCountX` / `tileCountY` — how many tiles wide/tall to extract at once (multi-tile selection)
-- `selectedTile` / `tileData` — the tile currently open in the pixel editor
-- `editingBankIndex` — index of the sprite currently loaded from the bank into the editor (`null` if editing from tileset)
+- `tileCountX` / `tileCountY` — multi-tile selection dimensions
+- `selectedTile` / `tileData` — tile currently open in the pixel editor
+- `editingBankIndex` — index of the sprite loaded from bank (`null` if editing from tileset)
 - `sprites: SpriteEntry[]` — the sprite bank collection
-- `activeTool` / `activeColor` — shared editor state passed down to Sidebar and PixelEditor
+- `layers: Layer[]` — per-sprite layers (max 8); `activeLayerId: string | null`
+- `activeTool` — `'draw' | 'erase' | 'fill' | 'eyedropper' | 'line' | 'rectangle' | 'ellipse' | 'selection'`
+- `activeColor` — hex string
+- `brushSize` — 1–16
+- `brushShape` — `'square' | 'circle' | 'dither'`
+- `selectionMode` — `'box' | 'magic'`; `magicTolerance` — 0–100
+- Modal flags: `showExportModal`, `showNewProjectModal`, `showAIImportModal`
 
 ### Component layout
 
 ```
 App
-├── Sidebar (left, w-52)       — upload, tool picker, color/palette, grid size, tile count
+├── Sidebar (left, w-52)       — upload, tool picker, brush size/shape, color/palette,
+│                                palette import (.hex/.gpl), preset palettes, grid size,
+│                                tile count, undo/redo, save/load project, theme toggle
 ├── TilesetViewer (center)     — zoomable/pannable canvas; click to select tile
 └── Right panel (w-72)
     ├── PropertiesPanel        — image metadata display
-    ├── PixelEditor            — 256×256 display canvas for editing; symmetry toggles; onion skin; save/update-in-bank
+    ├── PixelEditor            — editing canvas; zoom/pan; working buffer for draw/erase;
+    │   │                        shape previews; symmetry; onion skin; lock alpha; reference image
+    │   └── PixelEditorControls — symmetry toggles, wrap, onion, lock-alpha, nudge,
+    │                             transform (rotate/flip), reference image, clear, download PNG,
+    │                             save/update-in-bank buttons
+    ├── LayerPanel             — add/remove/reorder layers; visibility, opacity, blend mode, rename
     └── AnimationPreview       — flip-book preview of sprites in the bank
 SpriteBank (bottom bar)        — thumbnail strip of saved sprites; select/duplicate/remove; export trigger
-ExportModal (overlay)          — layout options, preview, triggers exportProject()
+ExportModal (overlay)          — spritesheet tab (layout, padding, atlas format, individual PNGs)
+                                 + GIF tab (frame range, FPS, scale, loop, transparent bg)
 AIImportModal (overlay)        — two-step AI sprite import (configure → preview)
 NewProjectModal (overlay)      — create a blank canvas with a chosen tile size
 ```
 
 ### Custom hooks
 
-- `useCanvas` — generic hook: takes `{width, height, draw}`, manages canvas sizing and exposes `redraw()`
-- `usePalette` — extracts the top-64 most-frequent colors from the loaded image (skips fully transparent pixels); returns `{colors, truncated, totalUnique}`
-- `useSymmetry` — given `{horizontal, vertical, gridSize}`, returns `getMirroredPixels(px, py)` which yields all pixel coordinates to paint (deduplicates center pixels on odd-size grids)
+- `useCanvas` — takes `{width, height, draw}`, manages canvas sizing, exposes `redraw()`
+- `usePalette` — extracts top-64 most-frequent colors from loaded image (skips transparent); returns `{colors, truncated, totalUnique}`
+- `useSymmetry` — given `{horizontal, vertical, gridSize}`, returns `getMirroredPixels(px, py)`
+- `usePixelEditorInput` — all mouse/keyboard input for `PixelEditor`: zoom/pan, draw/erase via working buffer, shape preview dispatch, selection (box + magic wand), clipboard (Ctrl+C/V), nudge, Alt-eyedropper; returns `{zoom, offset, isPanning, mousePixelPos, selection, selectionContent, isOverSelection, nudge}`
+- `useEditableField` — reusable inline double-click rename; used in SpriteBank and LayerPanel
+
+### Layers
+
+`Layer` interface (`src/state/layers.ts`):
+```typescript
+interface Layer {
+  id: string
+  name: string
+  imageData: ImageData
+  visible: boolean
+  opacity: number        // 0–1
+  blendMode: LayerBlendMode
+}
+```
+
+`LayerBlendMode`: `'source-over' | 'multiply' | 'screen' | 'overlay' | 'hard-light' | 'soft-light' | 'color-dodge' | 'color-burn' | 'difference' | 'exclusion' | 'lighten' | 'darken'`
+
+Key functions: `createLayer(w, h, name?)`, `createLayerFromImageData(imageData, name?)`, `flattenLayers(layers)`.
+
+### Utilities
+
+- `src/utils/brushStamp.ts` — `generateBrushStamp(size, shape): BrushOffset[]`; shapes: square, circle, dither (checkerboard)
+- `src/utils/ellipse.ts` — `ellipseOutline`, `filledEllipse`, `ellipseFromCorners` (midpoint algorithm)
+- `src/utils/magicWand.ts` — `magicWandSelect(imageData, x, y, tolerance)`, `maskToBoundingBox`, `extractMaskRegion`; BFS with RGBA Manhattan distance
+- `src/utils/colorUtils.ts` — `hexToRgba`, `rgbaToHex`, `getContext2D`
+- `src/utils/parsePalette.ts` — `parsePalette(content, filename)` — parses `.hex` and `.gpl` (GIMP) palette files
+- `src/utils/pixelEditorDraw.ts` — drawing helpers used by `PixelEditor` (flood fill, shape rendering on ImageData)
+- `src/utils/exportGif.ts` — `exportGif(sprites[], options)` using `gifenc`; options: fps, scale (1/2/4×), loopCount, frameStart/End, transparentBackground
+- `src/utils/exportProject.ts` — `exportProject()` produces spritesheet ZIP (PNG + JSON atlas)
+- `src/utils/aiImport.ts` — AI import pipeline (see AI Sprite Import section)
 
 ### AI Sprite Import
 
-`AIImportModal` lets users import AI-generated pixel art (512x512+ images where each logical pixel is an NxN block). The pipeline:
+`AIImportModal` lets users import AI-generated pixel art (512×512+ images where each logical pixel is an NxN block). The pipeline:
 
 1. User uploads an image → `detectScaleFactor()` samples random NxN blocks for candidates `[2, 3, 4, 6, 8, 10, 12, 16]`, scores uniformity, returns sorted `{factor, confidence}[]`
-2. User picks scale factor (auto-detected or manual), downscale method, tile size, sprite layout (tiles wide × tall), optional color quantization, optional background removal
-3. `downscaleImage()` dispatches to one of three methods:
-   - `'mode'` (`downscaleMode`) — most-frequent-color per block (recommended; handles JPEG artifacts via color bucketing)
-   - `'center'` (`downscaleNearestNeighbor`) — samples center pixel of each block
-   - `'average'` (`downscaleAverage`) — averages all pixels per block
+2. User picks scale factor, downscale method, tile size, sprite layout, optional color quantization, optional background removal
+3. `downscaleImage()` dispatches to: `'mode'` (most-frequent-color per block, recommended), `'center'` (center pixel), `'average'` (averaged pixels)
 4. Optional: `quantizeColors()` merges similar colors within a Manhattan-distance threshold
-5. Optional: `detectBackgroundColor()` samples edge pixels → `removeBackgroundColor()` makes matching pixels transparent
-6. `sliceIntoTiles()` cuts the downscaled image into sprites, optionally skipping empty tiles
-7. Resulting `ImageData[]` is passed to `App.handleAIImport()` which assigns IDs/names via `spriteCounter` and appends to `sprites[]`; alternatively `App.handleAILoadAsTileset()` loads the downscaled image as the main tileset
-
-Utility functions live in `src/utils/aiImport.ts`: `detectScaleFactor`, `downscaleImage`, `downscaleNearestNeighbor`, `downscaleMode`, `downscaleAverage`, `quantizeColors`, `detectBackgroundColor`, `removeBackgroundColor`, `sliceIntoTiles`, `isEmptyTile`.
+5. Optional: `detectBackgroundColor()` → `removeBackgroundColor()` makes matching edge pixels transparent
+6. `sliceIntoTiles()` cuts the result into sprites, optionally skipping empty tiles
+7. Results go to `App.handleAIImport()` (appends to `sprites[]`) or `App.handleAILoadAsTileset()` (loads as tileset)
 
 ### Styling
 
-Tailwind CSS v4 via the `@tailwindcss/vite` plugin (no `tailwind.config.js`). The design uses a set of CSS custom-property-backed semantic tokens throughout: `bg-bg-panel`, `bg-bg-hover`, `bg-bg-primary`, `bg-bg-secondary`, `text-text-primary`, `text-text-secondary`, `text-text-muted`, `border-border-default`, `bg-accent`, `bg-accent-hover`. Use these tokens rather than raw Tailwind colors to stay consistent with the dark theme.
+Tailwind CSS v4 via the `@tailwindcss/vite` plugin (no `tailwind.config.js`). Use semantic tokens: `bg-bg-panel`, `bg-bg-hover`, `bg-bg-primary`, `bg-bg-secondary`, `text-text-primary`, `text-text-secondary`, `text-text-muted`, `border-border-default`, `bg-accent`, `bg-accent-hover`.
 
-### Export format
+### Export formats
 
-`exportProject()` produces a `catpix_export.zip` containing:
-- `spritesheet.png` — all sprites composited with 2px padding per side
-- `spritesheet.json` — atlas with `meta` (app, version, size, tileSize, padding, layout) and `frames[]` (name, x, y, width, height)
+- **Spritesheet ZIP** (`catpix_export.zip`): `spritesheet.png` + `spritesheet.json` atlas (CatPix / TexturePacker / CSS Sprites format); optional individual PNGs
+- **Animated GIF** via `exportGif.ts`: frame range, FPS (1–60), scale (1×/2×/4×), loop count, optional 1-bit transparency
+- **Project file** (`.catpix`): binary save via `src/utils/storage.ts`; also save/load to browser storage
 
 ### Keyboard shortcuts
 
-- `D` — draw tool
-- `E` — erase tool
-- `Escape` — close modals (export, new project, AI import)
-- Scroll wheel — zoom TilesetViewer
-- Middle-click or Alt+left-click — pan TilesetViewer
+| Key | Action |
+|-----|--------|
+| `D` | Draw tool |
+| `E` | Erase tool |
+| `F` | Fill tool |
+| `I` | Eyedropper |
+| `L` | Line tool |
+| `R` | Rectangle tool |
+| `O` | Ellipse tool |
+| `M` | Selection tool |
+| `Alt` | Temporary eyedropper (any tool) |
+| `Delete` | Clear selection region |
+| `Ctrl+C` | Copy selection |
+| `Ctrl+V` | Paste selection |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Shift+Z` | Redo |
+| `Arrow keys` | Move selection content |
+| `Shift` (shapes) | Constrain to square/circle |
+| `Escape` | Close modals |
+| Scroll wheel | Zoom canvas |
+| Middle-click / Alt+left-click | Pan canvas |

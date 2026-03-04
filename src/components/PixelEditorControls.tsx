@@ -1,7 +1,7 @@
 import {
   Trash2, Download, FlipHorizontal2, FlipVertical2,
   Save, Repeat, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Layers, Plus,
-  RotateCw, RotateCcw, ImageIcon,
+  RotateCw, RotateCcw, ImageIcon, Grid3x3, Maximize2, Sparkles,
 } from 'lucide-react'
 
 interface PixelEditorControlsProps {
@@ -17,6 +17,8 @@ interface PixelEditorControlsProps {
   onionSkinData: ImageData | null
   lockAlpha: boolean
   setLockAlpha: React.Dispatch<React.SetStateAction<boolean>>
+  showTiling: boolean
+  setShowTiling: React.Dispatch<React.SetStateAction<boolean>>
   // Info
   spriteW: number
   spriteH: number
@@ -42,6 +44,8 @@ interface PixelEditorControlsProps {
   isEditingBank: boolean
   onSaveToBank: () => void
   onUpdateInBank: () => void
+  onOutlineEffect: () => void
+  onOpenResize: () => void
 }
 
 export function PixelEditorControls({
@@ -51,6 +55,7 @@ export function PixelEditorControls({
   onionSkin, setOnionSkin,
   onionSkinData,
   lockAlpha, setLockAlpha,
+  showTiling, setShowTiling,
   spriteW, spriteH, zoom,
   nudge,
   handleRotate, handleFlip,
@@ -60,6 +65,7 @@ export function PixelEditorControls({
   refInputRef, handleLoadRef,
   tileData, onClear, handleDownload,
   isEditingBank, onSaveToBank, onUpdateInBank,
+  onOutlineEffect, onOpenResize,
 }: PixelEditorControlsProps) {
   return (
     <>
@@ -89,7 +95,7 @@ export function PixelEditorControls({
         </button>
       </div>
       {/* Mode toggles row 2 */}
-      <div className="flex gap-1.5 mb-3">
+      <div className="flex gap-1.5 mb-1.5">
         <button
           onClick={() => setWrapAround((v) => !v)}
           className={`flex-1 flex items-center justify-center gap-1 px-1 py-1 rounded text-[11px] transition-colors cursor-pointer ${
@@ -122,6 +128,40 @@ export function PixelEditorControls({
         >
           <ImageIcon size={12} />
           Lock α
+        </button>
+      </div>
+      {/* Mode toggles row 3 */}
+      <div className="flex gap-1.5 mb-3">
+        <button
+          onClick={() => setShowTiling((v) => !v)}
+          className={`flex-1 flex items-center justify-center gap-1 px-1 py-1 rounded text-[11px] transition-colors cursor-pointer ${
+            showTiling ? 'bg-teal-600 text-white' : 'bg-bg-hover text-text-secondary hover:text-text-primary'
+          }`}
+          title="Tiling preview: show 3×3 repeat of the tile"
+          aria-label="Toggle tiling preview"
+        >
+          <Grid3x3 size={12} />
+          Tile
+        </button>
+        <button
+          onClick={onOutlineEffect}
+          disabled={!tileData}
+          className="flex-1 flex items-center justify-center gap-1 px-1 py-1 rounded text-[11px] transition-colors cursor-pointer bg-bg-hover text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Add outline to sprite edges"
+          aria-label="Add outline"
+        >
+          <Sparkles size={12} />
+          Outline
+        </button>
+        <button
+          onClick={onOpenResize}
+          disabled={!tileData}
+          className="flex-1 flex items-center justify-center gap-1 px-1 py-1 rounded text-[11px] transition-colors cursor-pointer bg-bg-hover text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Resize/crop canvas"
+          aria-label="Resize canvas"
+        >
+          <Maximize2 size={12} />
+          Resize
         </button>
       </div>
 

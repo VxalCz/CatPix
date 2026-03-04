@@ -54,11 +54,12 @@ export function exportGif(sprites: SpriteEntry[], options: GifExportOptions): vo
 
   const outW = frames[0].width * scale
   const outH = frames[0].height * scale
-  const delay = Math.round(1000 / fps)
+  const globalDelay = Math.round(1000 / fps)
 
   const gif = GIFEncoder()
 
   for (const frame of frames) {
+    const delay = frame.delay ?? globalDelay
     const canvas = imageDataToCanvas(frame.imageData)
     const ctx = canvas.getContext('2d')
     if (!ctx) continue

@@ -11,6 +11,7 @@ interface SerializedSprite {
   width: number
   height: number
   data: number[]  // Uint8ClampedArray as regular array
+  delay?: number
 }
 
 export interface ProjectData {
@@ -46,6 +47,7 @@ function serializeSprites(sprites: SpriteEntry[]): SerializedSprite[] {
     width: s.width,
     height: s.height,
     data: Array.from(s.imageData.data),
+    delay: s.delay,
   }))
 }
 
@@ -60,6 +62,7 @@ function deserializeSprites(serialized: SerializedSprite[]): SpriteEntry[] {
       s.width,
       s.height,
     ),
+    delay: s.delay,
   }))
 }
 

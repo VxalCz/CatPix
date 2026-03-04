@@ -25,6 +25,7 @@ interface UsePixelEditorInputOptions {
   paintAt: (px: number, py: number) => void
   performFill: (px: number, py: number) => void
   performEyedrop: (px: number, py: number) => void
+  performColorReplace: (px: number, py: number) => void
   drawLineOnData: (data: ImageData, x0: number, y0: number, x1: number, y1: number) => ImageData
   drawRectOnData: (data: ImageData, x0: number, y0: number, x1: number, y1: number, filled: boolean) => ImageData
   drawEllipseOnData: (data: ImageData, x0: number, y0: number, x1: number, y1: number, filled: boolean) => ImageData
@@ -66,6 +67,7 @@ export function usePixelEditorInput({
   paintAt,
   performFill,
   performEyedrop,
+  performColorReplace,
   drawLineOnData,
   drawRectOnData,
   drawEllipseOnData,
@@ -479,6 +481,11 @@ export function usePixelEditorInput({
 
       if (tool === 'eyedropper') {
         performEyedrop(coords.px, coords.py)
+        return
+      }
+
+      if (tool === 'replace') {
+        performColorReplace(coords.px, coords.py)
         return
       }
 

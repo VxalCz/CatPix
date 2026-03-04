@@ -2,6 +2,7 @@ import {
   Upload, Grid3x3, Pencil, Eraser, AlertTriangle, Palette, FilePlus,
   ChevronDown, Sparkles, PaintBucket, Pipette, Minus, Square, BoxSelect,
   Undo2, Redo2, Save, FolderOpen, Download, Sun, Moon, Circle, Wand2,
+  RefreshCw, Type, Film, Brush,
 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { parsePalette } from '../utils/parsePalette'
@@ -21,14 +22,20 @@ interface SidebarProps {
   onUpload: () => void
   onNewProject: () => void
   onAIImport: () => void
+  onGifImport: (file: File) => void
   activeTool: Tool
   onToolChange: (tool: Tool) => void
   activeColor: string
   onColorChange: (color: string) => void
+  colorHistory: string[]
+  snapToPalette: boolean
+  onSnapToPaletteChange: (enabled: boolean) => void
   brushSize: number
   onBrushSizeChange: (size: number) => void
   brushShape: BrushShape
   onBrushShapeChange: (shape: BrushShape) => void
+  customBrush: boolean[][] | null
+  onOpenCustomBrush: () => void
   selectionMode: SelectionMode
   onSelectionModeChange: (mode: SelectionMode) => void
   magicTolerance: number
@@ -54,6 +61,8 @@ const tools: { icon: typeof Pencil; label: string; key: Tool }[] = [
   { icon: Square, label: 'Rectangle (R)', key: 'rectangle' },
   { icon: Circle, label: 'Ellipse (O)', key: 'ellipse' },
   { icon: BoxSelect, label: 'Selection (M)', key: 'selection' },
+  { icon: RefreshCw, label: 'Replace color', key: 'replace' },
+  { icon: Type, label: 'Text tool', key: 'text' },
 ]
 
 export function Sidebar({
@@ -66,14 +75,20 @@ export function Sidebar({
   onUpload,
   onNewProject,
   onAIImport,
+  onGifImport,
   activeTool,
   onToolChange,
   activeColor,
   onColorChange,
+  colorHistory,
+  snapToPalette,
+  onSnapToPaletteChange,
   brushSize,
   onBrushSizeChange,
   brushShape,
   onBrushShapeChange,
+  customBrush,
+  onOpenCustomBrush,
   selectionMode,
   onSelectionModeChange,
   magicTolerance,
@@ -89,6 +104,7 @@ export function Sidebar({
   onLoadProject,
   onExportCatPix,
 }: SidebarProps) {
+  const gifImportRef = useRef<HTMLInputElement>(null)
   const [activePreset, setActivePreset] = useState<string | null>(null)
   const [showPresets, setShowPresets] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -113,6 +129,17 @@ export function Sidebar({
     <div className="w-52 bg-bg-panel border-r border-border-default flex flex-col">
       {/* Upload + New */}
       <div className="p-3 border-b border-border-default space-y-1.5">
+        <input
+          ref={gifImportRef}
+          type="file"
+          accept=".gif"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) onGifImport(file)
+            e.target.value = ''
+          }}
+        />
         <button
           onClick={onUpload}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-md bg-accent hover:bg-accent-hover text-white text-sm font-medium transition-colors cursor-pointer"
@@ -136,6 +163,14 @@ export function Sidebar({
         >
           <Sparkles size={16} />
           AI Sprite Import
+        </button>
+        <button
+          onClick={() => gifImportRef.current?.click()}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-md bg-bg-hover hover:bg-border-default text-text-secondary hover:text-text-primary text-sm transition-colors cursor-pointer"
+          aria-label="Import GIF as frames"
+        >
+          <Film size={16} />
+          Import GIF
         </button>
       </div>
 
@@ -225,19 +260,21 @@ export function Sidebar({
         {/* Brush Size - only for draw/erase */}
         {(activeTool === 'draw' || activeTool === 'erase') && (
           <div className="mt-2">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-text-muted">Size</span>
-              <input
-                type="range"
-                min={1}
-                max={16}
-                value={brushSize}
-                onChange={(e) => onBrushSizeChange(Number(e.target.value))}
-                className="flex-1 accent-accent"
-              />
-              <span className="text-xs text-text-primary font-mono w-4 text-right">{brushSize}</span>
-            </div>
-            <div className="flex gap-1 mt-1">
+            {brushShape !== 'custom' && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted">Size</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={16}
+                  value={brushSize}
+                  onChange={(e) => onBrushSizeChange(Number(e.target.value))}
+                  className="flex-1 accent-accent"
+                />
+                <span className="text-xs text-text-primary font-mono w-4 text-right">{brushSize}</span>
+              </div>
+            )}
+            <div className="flex gap-1 mt-1 flex-wrap">
               <button
                 onClick={() => onBrushShapeChange('square')}
                 className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[10px] transition-colors cursor-pointer ${
@@ -247,7 +284,7 @@ export function Sidebar({
                 }`}
               >
                 <Square size={10} />
-                Square
+                Sq
               </button>
               <button
                 onClick={() => onBrushShapeChange('circle')}
@@ -258,7 +295,7 @@ export function Sidebar({
                 }`}
               >
                 <Circle size={10} />
-                Circle
+                Circ
               </button>
               <button
                 onClick={() => onBrushShapeChange('dither')}
@@ -269,7 +306,19 @@ export function Sidebar({
                 }`}
                 title="Dithering (checkerboard pattern)"
               >
-                Dither
+                Dith
+              </button>
+              <button
+                onClick={onOpenCustomBrush}
+                className={`flex-1 flex items-center justify-center gap-0.5 py-1 rounded text-[10px] transition-colors cursor-pointer ${
+                  brushShape === 'custom' && customBrush
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-hover text-text-secondary hover:text-text-primary'
+                }`}
+                title="Custom brush pattern"
+              >
+                <Brush size={10} />
+                Cust
               </button>
             </div>
           </div>
@@ -322,9 +371,20 @@ export function Sidebar({
 
       {/* Active Color */}
       <div className="p-3 border-b border-border-default">
-        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
-          Color
-        </h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+            Color
+          </h3>
+          <button
+            onClick={() => onSnapToPaletteChange(!snapToPalette)}
+            className={`px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+              snapToPalette ? 'bg-accent text-white' : 'bg-bg-hover text-text-secondary hover:text-text-primary'
+            }`}
+            title="Snap to palette: constrain drawing to palette colors"
+          >
+            Snap
+          </button>
+        </div>
         <div className="flex items-center gap-2">
           <div className="relative">
             <div
@@ -346,6 +406,25 @@ export function Sidebar({
           </div>
           <span className="text-xs font-mono text-text-secondary">{activeColor}</span>
         </div>
+        {/* Color history */}
+        {colorHistory.length > 0 && (
+          <div className="mt-2">
+            <p className="text-[10px] text-text-muted mb-1">Recent</p>
+            <div className="flex flex-wrap gap-0.5">
+              {colorHistory.map((hex, i) => (
+                <button
+                  key={`${hex}-${i}`}
+                  onClick={() => onColorChange(hex)}
+                  className={`w-5 h-5 rounded-sm border cursor-pointer transition-transform hover:scale-110 ${
+                    activeColor === hex ? 'border-white ring-1 ring-white' : 'border-border-default'
+                  }`}
+                  style={{ backgroundColor: hex }}
+                  title={hex}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Palette */}

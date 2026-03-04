@@ -2,9 +2,9 @@ import type { SpriteEntry } from '../App'
 import type { Layer, LayerBlendMode } from './layers'
 import { createLayerFromImageData, createLayer } from './layers'
 
-export type Tool = 'draw' | 'erase' | 'fill' | 'eyedropper' | 'line' | 'rectangle' | 'ellipse' | 'selection'
+export type Tool = 'draw' | 'erase' | 'fill' | 'eyedropper' | 'line' | 'rectangle' | 'ellipse' | 'selection' | 'replace' | 'text'
 
-export type BrushShape = 'square' | 'circle' | 'dither'
+export type BrushShape = 'square' | 'circle' | 'dither' | 'custom'
 
 export type SelectionMode = 'box' | 'magic'
 
@@ -17,8 +17,11 @@ export interface AppState {
   tileData: ImageData | null
   activeTool: Tool
   activeColor: string
+  colorHistory: string[]
+  snapToPalette: boolean
   brushSize: number
   brushShape: BrushShape
+  customBrush: boolean[][] | null
   selectionMode: SelectionMode
   magicTolerance: number
   sprites: SpriteEntry[]
@@ -26,6 +29,7 @@ export interface AppState {
   showExportModal: boolean
   showNewProjectModal: boolean
   showAIImportModal: boolean
+  showResizeModal: boolean
   // Layers
   layers: Layer[]
   activeLayerId: string | null
@@ -40,8 +44,11 @@ export const initialState: AppState = {
   tileData: null,
   activeTool: 'draw',
   activeColor: '#000000',
+  colorHistory: [],
+  snapToPalette: false,
   brushSize: 1,
   brushShape: 'square',
+  customBrush: null,
   selectionMode: 'box',
   magicTolerance: 32,
   sprites: [],
@@ -49,6 +56,7 @@ export const initialState: AppState = {
   showExportModal: false,
   showNewProjectModal: false,
   showAIImportModal: false,
+  showResizeModal: false,
   layers: [],
   activeLayerId: null,
 }
@@ -71,6 +79,11 @@ export type AppAction =
   | { type: 'SET_SHOW_EXPORT_MODAL'; show: boolean }
   | { type: 'SET_SHOW_NEW_PROJECT_MODAL'; show: boolean }
   | { type: 'SET_SHOW_AI_IMPORT_MODAL'; show: boolean }
+  | { type: 'SET_SHOW_RESIZE_MODAL'; show: boolean }
+  | { type: 'SET_SNAP_TO_PALETTE'; enabled: boolean }
+  | { type: 'SET_CUSTOM_BRUSH'; brush: boolean[][] | null }
+  | { type: 'RESIZE_CANVAS'; width: number; height: number; anchorX: number; anchorY: number }
+  | { type: 'SET_SPRITE_DELAY'; id: string; delay: number | undefined }
   | { type: 'LOAD_IMAGE'; image: HTMLImageElement }
   | { type: 'NEW_PROJECT'; tileSize: number; blankData: ImageData }
   | { type: 'SELECT_TILE'; col: number; row: number; tileData: ImageData }
@@ -117,6 +130,8 @@ export const UNDOABLE_ACTIONS = new Set<AppAction['type']>([
   'SET_LAYER_OPACITY',
   'SET_LAYER_BLEND_MODE',
   'SET_LAYER_NAME',
+  'RESIZE_CANVAS',
+  'SET_SPRITE_DELAY',
 ])
 
 function initLayersFromTileData(tileData: ImageData): { layers: Layer[]; activeLayerId: string } {
@@ -140,8 +155,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, tileData: action.tileData }
     case 'SET_ACTIVE_TOOL':
       return { ...state, activeTool: action.tool }
-    case 'SET_ACTIVE_COLOR':
-      return { ...state, activeColor: action.color }
+    case 'SET_ACTIVE_COLOR': {
+      const prev = state.colorHistory
+      const deduped = [action.color, ...prev.filter((c) => c !== action.color)].slice(0, 16)
+      return { ...state, activeColor: action.color, colorHistory: deduped }
+    }
     case 'SET_BRUSH_SIZE':
       return { ...state, brushSize: action.size }
     case 'SET_BRUSH_SHAPE':
@@ -160,6 +178,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, showNewProjectModal: action.show }
     case 'SET_SHOW_AI_IMPORT_MODAL':
       return { ...state, showAIImportModal: action.show }
+    case 'SET_SHOW_RESIZE_MODAL':
+      return { ...state, showResizeModal: action.show }
+    case 'SET_SNAP_TO_PALETTE':
+      return { ...state, snapToPalette: action.enabled }
+    case 'SET_CUSTOM_BRUSH':
+      return { ...state, customBrush: action.brush }
+    case 'SET_SPRITE_DELAY': {
+      const next = state.sprites.map((s) =>
+        s.id === action.id ? { ...s, delay: action.delay } : s
+      )
+      return { ...state, sprites: next }
+    }
 
     case 'LOAD_IMAGE':
       return {
@@ -379,6 +409,43 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           l.id === action.layerId ? { ...l, blendMode: action.blendMode } : l,
         ),
       }
+
+    case 'RESIZE_CANVAS': {
+      if (state.layers.length === 0 || !state.tileData) return state
+      const { width: newW, height: newH, anchorX, anchorY } = action
+      const oldW = state.tileData.width
+      const oldH = state.tileData.height
+      // Compute offset based on anchor (0=left/top, 1=center, 2=right/bottom)
+      const offsetX = anchorX === 0 ? 0 : anchorX === 1 ? Math.floor((newW - oldW) / 2) : newW - oldW
+      const offsetY = anchorY === 0 ? 0 : anchorY === 1 ? Math.floor((newH - oldH) / 2) : newH - oldH
+      const newLayers = state.layers.map((l) => {
+        const newData = new ImageData(newW, newH)
+        const src = l.imageData.data
+        const dst = newData.data
+        for (let y = 0; y < oldH; y++) {
+          for (let x = 0; x < oldW; x++) {
+            const nx = x + offsetX
+            const ny = y + offsetY
+            if (nx >= 0 && nx < newW && ny >= 0 && ny < newH) {
+              const si = (y * oldW + x) * 4
+              const di = (ny * newW + nx) * 4
+              dst[di] = src[si]
+              dst[di + 1] = src[si + 1]
+              dst[di + 2] = src[si + 2]
+              dst[di + 3] = src[si + 3]
+            }
+          }
+        }
+        return { ...l, imageData: newData }
+      })
+      const newTileData = new ImageData(newW, newH)
+      return {
+        ...state,
+        showResizeModal: false,
+        layers: newLayers,
+        tileData: newTileData,
+      }
+    }
 
     case 'COMMIT_STROKE':
       // No-op: exists solely as a snapshot trigger for undo

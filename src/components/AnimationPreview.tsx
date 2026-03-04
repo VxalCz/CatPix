@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useMemo } from 'react'
 import { Play, Pause, Film } from 'lucide-react'
 import type { SpriteEntry } from '../App'
 import { useAnimationPlayer } from '../hooks/useAnimationPlayer'
@@ -14,10 +14,13 @@ export function AnimationPreview({ sprites }: AnimationPreviewProps) {
   const [fps, setFps] = useState(8)
   const [playing, setPlaying] = useState(true)
 
+  const frameDurations = useMemo(() => sprites.map((s) => s.delay), [sprites])
+
   const { currentFrame } = useAnimationPlayer({
     frameCount: sprites.length,
     fps,
     playing,
+    frameDurations,
   })
 
   useEffect(() => {

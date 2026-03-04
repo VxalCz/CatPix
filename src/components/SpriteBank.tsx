@@ -13,6 +13,7 @@ interface SpriteBankProps {
   onRename: (id: string, name: string) => void
   onReorder: (fromIndex: number, toIndex: number) => void
   onClearAll: () => void
+  onSetDelay: (id: string, delay: number | undefined) => void
   onOpenExport: () => void
 }
 
@@ -51,8 +52,11 @@ export function SpriteBank({
   onRename,
   onReorder,
   onClearAll,
+  onSetDelay,
   onOpenExport,
 }: SpriteBankProps) {
+  const [editingDelayId, setEditingDelayId] = useState<string | null>(null)
+  const [editingDelayValue, setEditingDelayValue] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const {
     editingId: editingNameId,
@@ -184,6 +188,42 @@ export function SpriteBank({
                   ) : (
                     sprite.name
                   )}
+                </span>
+
+                {/* Per-frame delay badge */}
+                <span
+                  className="absolute top-0 left-0 bg-black/70 text-[8px] text-text-muted px-0.5 cursor-pointer hover:text-text-primary"
+                  title="Frame delay (ms) — double-click to edit"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation()
+                    setEditingDelayId(sprite.id)
+                    setEditingDelayValue(String(sprite.delay ?? ''))
+                  }}
+                >
+                  {editingDelayId === sprite.id ? (
+                    <input
+                      autoFocus
+                      value={editingDelayValue}
+                      onChange={(e) => setEditingDelayValue(e.target.value)}
+                      onBlur={() => {
+                        const ms = parseInt(editingDelayValue)
+                        onSetDelay(sprite.id, isNaN(ms) || ms <= 0 ? undefined : ms)
+                        setEditingDelayId(null)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const ms = parseInt(editingDelayValue)
+                          onSetDelay(sprite.id, isNaN(ms) || ms <= 0 ? undefined : ms)
+                          setEditingDelayId(null)
+                        }
+                        if (e.key === 'Escape') setEditingDelayId(null)
+                        e.stopPropagation()
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-10 bg-transparent text-white text-[8px] outline-none border-b border-accent"
+                      placeholder="ms"
+                    />
+                  ) : sprite.delay ? `${sprite.delay}ms` : '·'}
                 </span>
 
                 {/* Duplicate button */}

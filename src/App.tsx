@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useMemo, useReducer } from 'react'
+import { useRef, useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { TilesetViewer } from './components/TilesetViewer'
 import { PropertiesPanel } from './components/PropertiesPanel'
@@ -9,9 +9,13 @@ import { NewProjectModal } from './components/NewProjectModal'
 import { AnimationPreview } from './components/AnimationPreview'
 import { AIImportModal } from './components/AIImportModal'
 import { LayerPanel } from './components/LayerPanel'
+import { ResizeModal } from './components/ResizeModal'
+import { CustomBrushModal } from './components/CustomBrushModal'
 import { usePalette } from './hooks/usePalette'
 import { exportProject, exportCatPixProject, type ExportOptions } from './utils/exportProject'
 import { exportGif, type GifExportOptions } from './utils/exportGif'
+import { importGif } from './utils/gifImport'
+import { addOutline } from './utils/outlineEffect'
 import { flattenLayers } from './state/layers'
 import { saveProject, loadProject, restoreSprites, restoreImage } from './utils/storage'
 import { initialState } from './state/appReducer'
@@ -27,6 +31,7 @@ export interface SpriteEntry {
   width: number
   height: number
   imageData: ImageData
+  delay?: number  // per-frame duration in ms; undefined = use global FPS
 }
 
 let spriteNameCounter = 0
@@ -40,12 +45,16 @@ function App() {
   const {
     image, gridSize, tileCountX, tileCountY,
     selectedTile, tileData, activeTool, activeColor,
-    brushSize, brushShape,
+    colorHistory, snapToPalette,
+    brushSize, brushShape, customBrush,
     selectionMode, magicTolerance,
     sprites, editingBankIndex,
-    showExportModal, showNewProjectModal, showAIImportModal,
+    showExportModal, showNewProjectModal, showAIImportModal, showResizeModal,
     layers, activeLayerId,
   } = state
+
+  const [showCustomBrushModal, setShowCustomBrushModal] = useState(false)
+
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const compositorCanvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'))
@@ -281,6 +290,32 @@ function App() {
     dispatch({ type: 'RENAME_SPRITE', id, name })
   }, [])
 
+  const handleSetSpriteDelay = useCallback((id: string, delay: number | undefined) => {
+    dispatch({ type: 'SET_SPRITE_DELAY', id, delay })
+  }, [])
+
+  const handleOutlineEffect = useCallback(() => {
+    const activeLayer = layers.find((l) => l.id === activeLayerId)
+    if (!activeLayer) return
+    const outlined = addOutline(activeLayer.imageData, activeColor)
+    dispatch({ type: 'UPDATE_ACTIVE_LAYER', imageData: outlined })
+    dispatch({ type: 'COMMIT_STROKE' })
+  }, [layers, activeLayerId, activeColor])
+
+  const handleResizeCanvas = useCallback((width: number, height: number, anchorX: number, anchorY: number) => {
+    dispatch({ type: 'RESIZE_CANVAS', width, height, anchorX, anchorY })
+  }, [])
+
+  const handleGifImport = useCallback(async (file: File) => {
+    try {
+      const entries = await importGif(file)
+      if (entries.length === 0) { alert('No frames found in GIF.'); return }
+      dispatch({ type: 'AI_IMPORT', entries })
+    } catch {
+      alert('Failed to import GIF.')
+    }
+  }, [])
+
   const handleReorderSprites = useCallback((fromIndex: number, toIndex: number) => {
     dispatch({ type: 'REORDER_SPRITES', fromIndex, toIndex })
   }, [])
@@ -416,6 +451,8 @@ function App() {
         dispatch({ type: 'SET_SHOW_EXPORT_MODAL', show: false })
         dispatch({ type: 'SET_SHOW_NEW_PROJECT_MODAL', show: false })
         dispatch({ type: 'SET_SHOW_AI_IMPORT_MODAL', show: false })
+        dispatch({ type: 'SET_SHOW_RESIZE_MODAL', show: false })
+        setShowCustomBrushModal(false)
       }
     }
     window.addEventListener('keydown', handler)
@@ -446,14 +483,20 @@ function App() {
               onUpload={handleUpload}
               onNewProject={() => dispatch({ type: 'SET_SHOW_NEW_PROJECT_MODAL', show: true })}
               onAIImport={() => dispatch({ type: 'SET_SHOW_AI_IMPORT_MODAL', show: true })}
+              onGifImport={handleGifImport}
               activeTool={activeTool}
               onToolChange={(tool) => dispatch({ type: 'SET_ACTIVE_TOOL', tool })}
               activeColor={activeColor}
               onColorChange={(color) => dispatch({ type: 'SET_ACTIVE_COLOR', color })}
+              colorHistory={colorHistory}
+              snapToPalette={snapToPalette}
+              onSnapToPaletteChange={(enabled) => dispatch({ type: 'SET_SNAP_TO_PALETTE', enabled })}
               brushSize={brushSize}
               onBrushSizeChange={(size) => dispatch({ type: 'SET_BRUSH_SIZE', size })}
               brushShape={brushShape}
               onBrushShapeChange={(shape) => dispatch({ type: 'SET_BRUSH_SHAPE', shape })}
+              customBrush={customBrush}
+              onOpenCustomBrush={() => setShowCustomBrushModal(true)}
               selectionMode={selectionMode}
               onSelectionModeChange={(mode) => dispatch({ type: 'SET_SELECTION_MODE', mode })}
               magicTolerance={magicTolerance}
@@ -489,6 +532,9 @@ function App() {
                 activeColor={activeColor}
                 brushSize={brushSize}
                 brushShape={brushShape}
+                customBrush={customBrush}
+                snapToPalette={snapToPalette}
+                palette={palette}
                 selectionMode={selectionMode}
                 magicTolerance={magicTolerance}
                 onionSkinData={onionSkinData}
@@ -500,6 +546,8 @@ function App() {
                 onToolChange={(tool) => dispatch({ type: 'SET_ACTIVE_TOOL', tool })}
                 onSaveToBank={handleSaveToBank}
                 onUpdateInBank={handleUpdateInBank}
+                onOutlineEffect={handleOutlineEffect}
+                onOpenResize={() => dispatch({ type: 'SET_SHOW_RESIZE_MODAL', show: true })}
               />
               <LayerPanel
                 layers={layers}
@@ -527,6 +575,7 @@ function App() {
             onRename={handleRenameSprite}
             onReorder={handleReorderSprites}
             onClearAll={handleClearAllSprites}
+            onSetDelay={handleSetSpriteDelay}
             onOpenExport={() => dispatch({ type: 'SET_SHOW_EXPORT_MODAL', show: true })}
           />
 
@@ -551,6 +600,28 @@ function App() {
               onExport={handleExport}
               onExportGif={handleExportGif}
               onClose={() => dispatch({ type: 'SET_SHOW_EXPORT_MODAL', show: false })}
+            />
+          )}
+          {showResizeModal && tileData && (
+            <ResizeModal
+              currentWidth={tileData.width}
+              currentHeight={tileData.height}
+              onConfirm={handleResizeCanvas}
+              onClose={() => dispatch({ type: 'SET_SHOW_RESIZE_MODAL', show: false })}
+            />
+          )}
+          {showCustomBrushModal && (
+            <CustomBrushModal
+              initial={customBrush}
+              onConfirm={(brush) => {
+                dispatch({ type: 'SET_CUSTOM_BRUSH', brush })
+                dispatch({ type: 'SET_BRUSH_SHAPE', shape: 'custom' })
+              }}
+              onClear={() => {
+                dispatch({ type: 'SET_CUSTOM_BRUSH', brush: null })
+                dispatch({ type: 'SET_BRUSH_SHAPE', shape: 'square' })
+              }}
+              onClose={() => setShowCustomBrushModal(false)}
             />
           )}
         </div>

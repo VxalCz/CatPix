@@ -10,7 +10,23 @@ export interface BrushOffset {
  * For a brush of size 1, returns [{0, 0}].
  * For larger brushes, generates a square or circle pattern.
  */
-export function generateBrushStamp(size: number, shape: BrushShape): BrushOffset[] {
+export function generateBrushStamp(size: number, shape: BrushShape, customBrush?: boolean[][] | null): BrushOffset[] {
+  if (shape === 'custom' && customBrush && customBrush.length > 0) {
+    const rows = customBrush.length
+    const cols = customBrush[0].length
+    const offsets: BrushOffset[] = []
+    const originRow = Math.floor(rows / 2)
+    const originCol = Math.floor(cols / 2)
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (customBrush[r][c]) {
+          offsets.push({ dx: c - originCol, dy: r - originRow })
+        }
+      }
+    }
+    return offsets.length > 0 ? offsets : [{ dx: 0, dy: 0 }]
+  }
+
   if (size < 1) return [{ dx: 0, dy: 0 }]
 
   const offsets: BrushOffset[] = []

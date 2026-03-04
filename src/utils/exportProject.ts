@@ -1,5 +1,6 @@
 import JSZip from 'jszip'
 import type { SpriteEntry } from '../App'
+import { quantizeColors } from './aiImport'
 
 export type SheetLayout = 'auto' | 'horizontal' | 'vertical' | 'custom'
 export type AtlasFormat = 'catpix' | 'texturepacker' | 'css'
@@ -10,6 +11,8 @@ export interface ExportOptions {
   padding: number
   atlasFormat: AtlasFormat
   exportIndividualPngs: boolean
+  quantize: boolean
+  quantizePaletteSize: number
 }
 
 interface SpriteFrame {
@@ -142,7 +145,10 @@ export async function exportProject(
     const x = col * cellW + padding
     const y = row * cellH + padding
 
-    const tileCanvas = imageDataToCanvas(sprite.imageData)
+    const imageDataToUse = options.quantize
+      ? quantizeColors(sprite.imageData, Math.max(1, Math.round(255 / options.quantizePaletteSize)))
+      : sprite.imageData
+    const tileCanvas = imageDataToCanvas(imageDataToUse)
     ctx.drawImage(tileCanvas, x, y)
 
     frames.push({

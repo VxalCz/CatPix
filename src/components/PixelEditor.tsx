@@ -15,8 +15,60 @@ import {
 } from '../utils/pixelEditorDraw'
 import { usePixelEditorInput } from '../hooks/usePixelEditorInput'
 import { PixelEditorControls } from './PixelEditorControls'
+import { renderText } from '../data/pixelFont'
 
 const EDITOR_DISPLAY_SIZE = 256
+
+function TilingPreview({ data, spriteW, spriteH, zoom, offset }: {
+  data: ImageData
+  spriteW: number
+  spriteH: number
+  zoom: number
+  offset: { x: number; y: number }
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const w = spriteW * 3
+    const h = spriteH * 3
+    canvas.width = w
+    canvas.height = h
+    ctx.imageSmoothingEnabled = false
+    // Draw 3x3 grid of the tile
+    const tmp = document.createElement('canvas')
+    tmp.width = spriteW
+    tmp.height = spriteH
+    const tmpCtx = tmp.getContext('2d')
+    if (!tmpCtx) return
+    tmpCtx.putImageData(data, 0, 0)
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        ctx.drawImage(tmp, col * spriteW, row * spriteH)
+      }
+    }
+  }, [data, spriteW, spriteH])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'absolute',
+        left: offset.x - spriteW * zoom,
+        top: offset.y - spriteH * zoom,
+        width: spriteW * 3 * zoom,
+        height: spriteH * 3 * zoom,
+        imageRendering: 'pixelated',
+        opacity: 0.5,
+        pointerEvents: 'none',
+        border: '1px dashed rgba(99,102,241,0.5)',
+      }}
+    />
+  )
+}
 
 interface PixelEditorProps {
   tileData: ImageData | null
@@ -25,6 +77,9 @@ interface PixelEditorProps {
   activeColor: string
   brushSize: number
   brushShape: BrushShape
+  customBrush: boolean[][] | null
+  snapToPalette: boolean
+  palette: { hex: string }[]
   selectionMode: SelectionMode
   magicTolerance: number
   onionSkinData: ImageData | null
@@ -36,6 +91,8 @@ interface PixelEditorProps {
   onToolChange: (tool: Tool) => void
   onSaveToBank: () => void
   onUpdateInBank: () => void
+  onOutlineEffect: () => void
+  onOpenResize: () => void
 }
 
 export function PixelEditor({
@@ -45,6 +102,9 @@ export function PixelEditor({
   activeColor,
   brushSize,
   brushShape,
+  customBrush,
+  snapToPalette,
+  palette,
   selectionMode,
   magicTolerance,
   onionSkinData,
@@ -56,6 +116,8 @@ export function PixelEditor({
   onToolChange,
   onSaveToBank,
   onUpdateInBank,
+  onOutlineEffect,
+  onOpenResize,
 }: PixelEditorProps) {
   const displayData = compositeData ?? tileData
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -85,6 +147,11 @@ export function PixelEditor({
   const [wrapAround, setWrapAround] = useState(false)
   const [onionSkin, setOnionSkin] = useState(false)
   const [lockAlpha, setLockAlpha] = useState(false)
+  const [showTiling, setShowTiling] = useState(false)
+  // Text tool overlay
+  const [textToolPos, setTextToolPos] = useState<{ x: number; y: number; px: number; py: number } | null>(null)
+  const [textInput, setTextInput] = useState('')
+  const textInputRef = useRef<HTMLInputElement>(null)
 
   // Reference image
   const [refImage, setRefImage] = useState<HTMLImageElement | null>(null)
@@ -103,6 +170,9 @@ export function PixelEditor({
   const tileDataRef = useRef(tileData)
   const brushSizeRef = useRef(brushSize)
   const brushShapeRef = useRef(brushShape)
+  const customBrushRef = useRef(customBrush)
+  const snapToPaletteRef = useRef(snapToPalette)
+  const paletteRef = useRef(palette)
 
   const { getMirroredPixels } = useSymmetry({
     horizontal: symmetryH,
@@ -131,6 +201,9 @@ export function PixelEditor({
     tileDataRef.current = tileData
     brushSizeRef.current = brushSize
     brushShapeRef.current = brushShape
+    customBrushRef.current = customBrush
+    snapToPaletteRef.current = snapToPalette
+    paletteRef.current = palette
     if (!isDrawingRef.current) {
       workingBufferRef.current = tileData
     }
@@ -141,7 +214,7 @@ export function PixelEditor({
     onToolChangeRef.current = onToolChange
   }, [wrapAround, lockAlpha, spriteW, spriteH, activeTool, activeColor, tileData,
       getMirroredPixels, onTileDataChange, onStrokeCommit, onColorChange,
-      onToolChange, brushSize, brushShape])
+      onToolChange, brushSize, brushShape, customBrush, snapToPalette, palette])
 
   // Draw main canvas
   const redraw = useCallback(() => {
@@ -223,12 +296,27 @@ export function PixelEditor({
       const buf = workingBufferRef.current
       if (!buf) return
 
-      const brushOffsets = generateBrushStamp(brushSizeRef.current, brushShapeRef.current)
+      const brushOffsets = generateBrushStamp(brushSizeRef.current, brushShapeRef.current, customBrushRef.current)
       const wrap = wrapAroundRef.current
       const tool = activeToolRef.current
       const isDither = brushShapeRef.current === 'dither'
-      const [r, g, b, a] = activeRgbaRef.current
       const data = buf.data
+
+      // Snap-to-palette: find nearest palette color
+      let [r, g, b, a] = activeRgbaRef.current
+      if (snapToPaletteRef.current && paletteRef.current.length > 0 && tool !== 'erase') {
+        let best = Infinity
+        let bestRgba = [r, g, b, a]
+        for (const { hex } of paletteRef.current) {
+          const [pr, pg, pb, pa] = hexToRgba(hex)
+          const dist = Math.abs(pr - r) + Math.abs(pg - g) + Math.abs(pb - b) + Math.abs(pa - a)
+          if (dist < best) {
+            best = dist
+            bestRgba = [pr, pg, pb, pa]
+          }
+        }
+        ;[r, g, b, a] = bestRgba
+      }
 
       for (const { dx, dy } of brushOffsets) {
         const brushPx = px + dx
@@ -294,6 +382,45 @@ export function PixelEditor({
       const b = current.data[idx + 2]
       const a = current.data[idx + 3]
       onColorChangeRef.current(rgbaToHex(r, g, b, a))
+    },
+    [],
+  )
+
+  const performColorReplace = useCallback(
+    (px: number, py: number) => {
+      const current = tileDataRef.current
+      if (!current) return
+      if (px < 0 || px >= current.width || py < 0 || py >= current.height) return
+
+      const srcIdx = (py * current.width + px) * 4
+      const sr = current.data[srcIdx]
+      const sg = current.data[srcIdx + 1]
+      const sb = current.data[srcIdx + 2]
+      const sa = current.data[srcIdx + 3]
+
+      const [tr, tg, tb, ta] = activeRgbaRef.current
+      const result = new ImageData(new Uint8ClampedArray(current.data), current.width, current.height)
+      const d = result.data
+
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i] === sr && d[i + 1] === sg && d[i + 2] === sb && d[i + 3] === sa) {
+          d[i] = tr; d[i + 1] = tg; d[i + 2] = tb; d[i + 3] = ta
+        }
+      }
+
+      onTileDataChangeRef.current(result)
+      onStrokeCommitRef.current()
+    },
+    [],
+  )
+
+  const commitTextAtPixel = useCallback(
+    (text: string, px: number, py: number) => {
+      const current = tileDataRef.current
+      if (!current || !text.trim()) return
+      const result = renderText(text, current, px, py, rgbaToHex(...activeRgbaRef.current))
+      onTileDataChangeRef.current(result)
+      onStrokeCommitRef.current()
     },
     [],
   )
@@ -366,7 +493,7 @@ export function PixelEditor({
     isOverSelection,
     nudge,
     handleWheel,
-    handleContainerMouseDown,
+    handleContainerMouseDown: _handleContainerMouseDown,
     handleContainerMouseMove,
     handleContainerMouseUp,
     handleContainerMouseLeave,
@@ -385,6 +512,7 @@ export function PixelEditor({
     paintAt,
     performFill,
     performEyedrop,
+    performColorReplace,
     drawLineOnData,
     drawRectOnData,
     drawEllipseOnData,
@@ -393,6 +521,27 @@ export function PixelEditor({
     onStrokeCommitRef,
     onToolChangeRef,
   })
+
+  // Wrap mouseDown to intercept text tool clicks
+  const handleContainerMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (activeTool === 'text' && tileData) {
+      const container = containerRef.current
+      if (!container) return
+      const rect = container.getBoundingClientRect()
+      const canvasX = (e.clientX - rect.left - offset.x) / zoom
+      const canvasY = (e.clientY - rect.top - offset.y) / zoom
+      const px = Math.floor(canvasX)
+      const py = Math.floor(canvasY)
+      if (px >= 0 && px < tileData.width && py >= 0 && py < tileData.height) {
+        // Position the floating input at the click spot (in screen coords)
+        setTextToolPos({ x: e.clientX - rect.left, y: e.clientY - rect.top, px, py })
+        setTextInput('')
+        setTimeout(() => textInputRef.current?.focus(), 0)
+      }
+      return
+    }
+    _handleContainerMouseDown(e)
+  }, [activeTool, tileData, zoom, offset, _handleContainerMouseDown])
 
   // Redraw overlay whenever selection changes
   useEffect(() => {
@@ -408,6 +557,7 @@ export function PixelEditor({
     switch (activeTool) {
       case 'eyedropper': return 'crosshair'
       case 'selection': return isOverSelection ? 'move' : 'crosshair'
+      case 'text': return 'text'
       default: return 'crosshair'
     }
   })()
@@ -425,6 +575,7 @@ export function PixelEditor({
         onionSkin={onionSkin} setOnionSkin={setOnionSkin}
         onionSkinData={onionSkinData}
         lockAlpha={lockAlpha} setLockAlpha={setLockAlpha}
+        showTiling={showTiling} setShowTiling={setShowTiling}
         spriteW={spriteW} spriteH={spriteH} zoom={zoom}
         nudge={nudge}
         handleRotate={handleRotate} handleFlip={handleFlip}
@@ -434,6 +585,7 @@ export function PixelEditor({
         refInputRef={refInputRef} handleLoadRef={handleLoadRef}
         tileData={tileData} onClear={onClear} handleDownload={handleDownload}
         isEditingBank={isEditingBank} onSaveToBank={onSaveToBank} onUpdateInBank={onUpdateInBank}
+        onOutlineEffect={onOutlineEffect} onOpenResize={onOpenResize}
       />
 
       {/* Canvas wrapper */}
@@ -452,6 +604,50 @@ export function PixelEditor({
         onMouseUp={handleContainerMouseUp}
         onMouseLeave={handleContainerMouseLeave}
       >
+        {/* Tiling preview: 3x3 grid overlay outside the sprite */}
+        {showTiling && tileData && (
+          <TilingPreview data={compositeData ?? tileData} spriteW={spriteW} spriteH={spriteH} zoom={zoom} offset={offset} />
+        )}
+
+        {/* Text tool floating input */}
+        {textToolPos && (
+          <input
+            ref={textInputRef}
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                commitTextAtPixel(textInput, textToolPos.px, textToolPos.py)
+                setTextToolPos(null)
+                setTextInput('')
+              } else if (e.key === 'Escape') {
+                setTextToolPos(null)
+                setTextInput('')
+              }
+              e.stopPropagation()
+            }}
+            onBlur={() => {
+              if (textInput.trim()) commitTextAtPixel(textInput, textToolPos.px, textToolPos.py)
+              setTextToolPos(null)
+              setTextInput('')
+            }}
+            style={{
+              position: 'absolute',
+              left: textToolPos.x,
+              top: textToolPos.y,
+              background: 'rgba(0,0,0,0.7)',
+              color: activeColor,
+              border: `1px solid ${activeColor}`,
+              fontSize: 12,
+              padding: '2px 4px',
+              zIndex: 10,
+              minWidth: 60,
+            }}
+            className="outline-none font-mono text-xs"
+            placeholder="type text…"
+          />
+        )}
+
         {tileData && (
           <div
             style={{

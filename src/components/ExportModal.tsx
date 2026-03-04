@@ -117,6 +117,8 @@ export function ExportModal({
   const [padding, setPadding] = useState(2)
   const [atlasFormat, setAtlasFormat] = useState<AtlasFormat>('catpix')
   const [exportIndividualPngs, setExportIndividualPngs] = useState(false)
+  const [quantize, setQuantize] = useState(false)
+  const [quantizePaletteSize, setQuantizePaletteSize] = useState(32)
 
   // GIF state
   const [gifFps, setGifFps] = useState(8)
@@ -153,7 +155,7 @@ export function ExportModal({
   }, [layout, customCols, spriteCount, tileWidth, tileHeight, padding])
 
   const handleExportSpritesheet = () => {
-    onExport({ layout, customCols, padding, atlasFormat, exportIndividualPngs })
+    onExport({ layout, customCols, padding, atlasFormat, exportIndividualPngs, quantize, quantizePaletteSize })
   }
 
   const handleExportGif = () => {
@@ -319,6 +321,37 @@ export function ExportModal({
                 />
                 Also export individual PNGs
               </label>
+
+              {/* Quantize */}
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={quantize}
+                    onChange={(e) => setQuantize(e.target.checked)}
+                    className="accent-accent"
+                  />
+                  Quantize colors (reduce palette)
+                </label>
+                {quantize && (
+                  <div className="flex items-center gap-2 pl-5">
+                    <span className="text-[10px] text-text-muted">Max colors</span>
+                    <div className="flex gap-1">
+                      {[8, 16, 32, 64, 128, 256].map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => setQuantizePaletteSize(n)}
+                          className={`px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                            quantizePaletteSize === n ? 'bg-accent text-white' : 'bg-bg-hover text-text-secondary hover:text-text-primary'
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Preview info */}
               <div className="bg-bg-primary rounded p-3 space-y-1.5">

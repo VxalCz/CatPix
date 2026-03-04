@@ -4,30 +4,41 @@ interface UseAnimationPlayerOptions {
   frameCount: number
   fps: number
   playing: boolean
+  frameDurations?: (number | undefined)[]  // per-frame delay in ms; undefined = use global fps
 }
 
-export function useAnimationPlayer({ frameCount, fps, playing }: UseAnimationPlayerOptions) {
+export function useAnimationPlayer({ frameCount, fps, playing, frameDurations }: UseAnimationPlayerOptions) {
   const [currentFrame, setCurrentFrame] = useState(0)
   const lastTimeRef = useRef(0)
   const rafRef = useRef(0)
   const frameCountRef = useRef(frameCount)
   const fpsRef = useRef(fps)
+  const frameDurationsRef = useRef(frameDurations)
 
   useEffect(() => {
     frameCountRef.current = frameCount
     fpsRef.current = fps
+    frameDurationsRef.current = frameDurations
   })
 
   useEffect(() => {
     if (!playing || frameCount === 0) return
 
     lastTimeRef.current = performance.now()
+    let frame = 0
+
+    const getInterval = (f: number) => {
+      const durations = frameDurationsRef.current
+      const d = durations?.[f]
+      return d ?? (1000 / fpsRef.current)
+    }
 
     const tick = (time: number) => {
-      const interval = 1000 / fpsRef.current
+      const interval = getInterval(frame)
       if (time - lastTimeRef.current >= interval) {
         lastTimeRef.current = time - ((time - lastTimeRef.current) % interval)
-        setCurrentFrame((prev) => (prev + 1) % frameCountRef.current)
+        frame = (frame + 1) % frameCountRef.current
+        setCurrentFrame(frame)
       }
       rafRef.current = requestAnimationFrame(tick)
     }
