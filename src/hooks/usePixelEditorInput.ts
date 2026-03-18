@@ -1,6 +1,6 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
-import { copyRegion, pasteRegion, clearRegion, type SelectionRect } from '../utils/selection'
-import { magicWandSelect, maskToBoundingBox } from '../utils/magicWand'
+import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react'
+import { copyRegion, copyRegionMasked, pasteRegion, clearRegion, clearRegionMasked, type SelectionRect } from '../utils/selection'
+import { magicWandSelect, maskToBoundingBox, type SelectionMask } from '../utils/magicWand'
 import { mod } from '../utils/pixelEditorDraw'
 import type { Tool } from '../state/appReducer'
 import type { SelectionMode } from '../state/appReducer'
@@ -98,6 +98,7 @@ export function usePixelEditorInput({
   const [selectionContent, setSelectionContent] = useState<ImageData | null>(null)
   const selectionRef = useRef(selection)
   const selectionContentRef = useRef(selectionContent)
+  const selectionMaskRef = useRef<SelectionMask | null>(null)
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null)
   const movingSelRef = useRef(false)
   const moveStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -114,17 +115,17 @@ export function usePixelEditorInput({
   const selectionModeRef = useRef(selectionMode)
   const magicToleranceRef = useRef(magicTolerance)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     zoomRef.current = zoom
     offsetRef.current = offset
   }, [zoom, offset])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     panStartRef.current = panStart
     isPanningRef.current = isPanning
   }, [panStart, isPanning])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     wrapAroundRef.current = wrapAround
     spriteWRef.current = spriteW
     spriteHRef.current = spriteH
@@ -275,10 +276,15 @@ export function usePixelEditorInput({
       // Delete selected region
       if (e.key === 'Delete' && sel) {
         e.preventDefault()
-        const cleared = clearRegion(tileDataRef.current, sel)
+        const mask = selectionMaskRef.current
+        const cleared = mask
+          ? clearRegionMasked(tileDataRef.current, sel, mask)
+          : clearRegion(tileDataRef.current, sel)
         onTileDataChangeRef.current(cleared)
+        onStrokeCommitRef.current()
         setSelection(null)
         setSelectionContent(null)
+        selectionMaskRef.current = null
         return
       }
 
@@ -312,11 +318,39 @@ export function usePixelEditorInput({
         if (e.key === 'ArrowLeft') dx = -1
         if (e.key === 'ArrowRight') dx = 1
 
-        const newRect = { ...sel, x: sel.x + dx, y: sel.y + dy }
-        const cleared = clearRegion(tileDataRef.current, sel)
+        const newX = Math.max(0, Math.min(spriteWRef.current - sel.w, sel.x + dx))
+        const newY = Math.max(0, Math.min(spriteHRef.current - sel.h, sel.y + dy))
+        const newRect = { ...sel, x: newX, y: newY }
+        const mask = selectionMaskRef.current
+        const cleared = mask
+          ? clearRegionMasked(tileDataRef.current, sel, mask)
+          : clearRegion(tileDataRef.current, sel)
         const pasted = pasteRegion(cleared, content, newRect.x, newRect.y)
         onTileDataChangeRef.current(pasted)
         setSelection(newRect)
+        selectionMaskRef.current = null // mask is now stale after move
+        return
+      }
+
+      // Ctrl+A: select all
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault()
+        const w = spriteWRef.current
+        const h = spriteHRef.current
+        const allRect = { x: 0, y: 0, w, h }
+        setSelection(allRect)
+        setSelectionContent(copyRegion(tileDataRef.current, allRect))
+        selectionMaskRef.current = null
+        return
+      }
+
+      // Escape: deselect
+      if (e.key === 'Escape' && sel) {
+        e.preventDefault()
+        setSelection(null)
+        setSelectionContent(null)
+        selectionMaskRef.current = null
+        return
       }
     }
     window.addEventListener('keydown', handler)
@@ -397,6 +431,9 @@ export function usePixelEditorInput({
     }
 
     const handleWindowMouseUp = () => {
+      if (isPanningRef.current) {
+        setIsPanning(false)
+      }
       const tool = activeToolRef.current
       const wasDrawing = isDrawingRef.current
 
@@ -412,7 +449,8 @@ export function usePixelEditorInput({
         movingSelRef.current = false
         moveStartRef.current = null
         const sel = selectionRef.current
-        if (sel && tileDataRef.current && !selectionContentRef.current) {
+        // Re-extract content for box selection on every drag completion (not for magic wand or moves)
+        if (sel && tileDataRef.current && !wasMovingSelection && selectionMaskRef.current === null) {
           setSelectionContent(copyRegion(tileDataRef.current, sel))
         }
       }
@@ -509,7 +547,11 @@ export function usePixelEditorInput({
           coords.py >= sel.y && coords.py < sel.y + sel.h) {
           movingSelRef.current = true
           moveStartRef.current = { x: raw.rawX, y: raw.rawY }
-          preShapeDataRef.current = clearRegion(tileDataRef.current!, sel)
+          const mask = selectionMaskRef.current
+          preShapeDataRef.current = mask
+            ? clearRegionMasked(tileDataRef.current!, sel, mask)
+            : clearRegion(tileDataRef.current!, sel)
+          selectionMaskRef.current = null // mask is stale after move
           return
         }
 
@@ -521,10 +563,12 @@ export function usePixelEditorInput({
             const bbox = maskToBoundingBox(mask)
             if (bbox) {
               setSelection(bbox)
-              setSelectionContent(copyRegion(currentData, bbox))
+              setSelectionContent(copyRegionMasked(currentData, bbox, mask))
+              selectionMaskRef.current = mask
             } else {
               setSelection(null)
               setSelectionContent(null)
+              selectionMaskRef.current = null
             }
           }
           isDrawingRef.current = false
@@ -534,6 +578,7 @@ export function usePixelEditorInput({
         selectionStartRef.current = { x: coords.px, y: coords.py }
         setSelection(null)
         setSelectionContent(null)
+        selectionMaskRef.current = null
         return
       }
     },
@@ -581,7 +626,6 @@ export function usePixelEditorInput({
   )
 
   const handleContainerMouseLeave = useCallback(() => {
-    setIsPanning(false)
     setMousePixelPos(null)
   }, [])
 

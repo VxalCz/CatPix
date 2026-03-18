@@ -22,7 +22,6 @@ import { initialState } from './state/appReducer'
 import type { AppAction } from './state/appReducer'
 import type { LayerBlendMode } from './state/layers'
 import { undoReducer, createUndoState } from './state/undoReducer'
-import type { UndoAction } from './state/undoReducer'
 import { AppStateContext, AppDispatchContext } from './state/AppContext'
 
 export interface SpriteEntry {
@@ -35,6 +34,15 @@ export interface SpriteEntry {
 }
 
 let spriteNameCounter = 0
+
+function initSpriteCounter(sprites: SpriteEntry[]) {
+  let max = 0
+  for (const s of sprites) {
+    const m = s.name.match(/^sprite_(\d+)$/)
+    if (m) max = Math.max(max, parseInt(m[1], 10))
+  }
+  if (max > spriteNameCounter) spriteNameCounter = max
+}
 
 function App() {
   const [undoState, dispatch] = useReducer(undoReducer, initialState, createUndoState)
@@ -68,11 +76,6 @@ function App() {
     if (layers.length === 0) return tileData
     return flattenLayers(layers, compositorCanvasRef.current)
   }, [layers, tileData])
-
-  // Type-safe dispatch wrapper that handles both undo actions and app actions
-  const appDispatch = useCallback((action: UndoAction) => {
-    dispatch(action)
-  }, [])
 
   const { colors: palette, truncated: paletteTruncated, totalUnique: paletteTotalUnique } = usePalette(image)
 
@@ -154,11 +157,11 @@ function App() {
   }, [])
 
   const handleTileDataChange = useCallback((data: ImageData) => {
-    // Update active layer, and also sync tileData (which is the composite)
     if (activeLayerId && layers.length > 0) {
       dispatch({ type: 'UPDATE_ACTIVE_LAYER', imageData: data })
+    } else {
+      dispatch({ type: 'SET_TILE_DATA', tileData: data })
     }
-    dispatch({ type: 'SET_TILE_DATA', tileData: data })
   }, [activeLayerId, layers.length])
 
   const handleStrokeCommit = useCallback(() => {
@@ -295,12 +298,11 @@ function App() {
   }, [])
 
   const handleOutlineEffect = useCallback(() => {
-    const activeLayer = layers.find((l) => l.id === activeLayerId)
     if (!activeLayer) return
     const outlined = addOutline(activeLayer.imageData, activeColor)
     dispatch({ type: 'UPDATE_ACTIVE_LAYER', imageData: outlined })
     dispatch({ type: 'COMMIT_STROKE' })
-  }, [layers, activeLayerId, activeColor])
+  }, [activeLayer, activeColor])
 
   const handleResizeCanvas = useCallback((width: number, height: number, anchorX: number, anchorY: number) => {
     dispatch({ type: 'RESIZE_CANVAS', width, height, anchorX, anchorY })
@@ -333,6 +335,7 @@ function App() {
     if (!data) return
 
     const restoredSprites = restoreSprites(data)
+    initSpriteCounter(restoredSprites)
     const restoredImage = await restoreImage(data)
 
     // Reset state and load
@@ -377,6 +380,7 @@ function App() {
     loadProject().then(async (data) => {
       if (!data || data.sprites.length === 0) return
       const restoredSprites = restoreSprites(data)
+      initSpriteCounter(restoredSprites)
       const restoredImage = await restoreImage(data)
       if (restoredImage) {
         dispatch({ type: 'LOAD_IMAGE', image: restoredImage })
@@ -461,7 +465,7 @@ function App() {
 
   return (
     <AppStateContext.Provider value={state}>
-      <AppDispatchContext.Provider value={appDispatch as React.Dispatch<AppAction>}>
+      <AppDispatchContext.Provider value={dispatch as unknown as React.Dispatch<AppAction>}>
         <div className="flex flex-col h-full">
           {/* Main area */}
           <div className="flex flex-1 min-h-0">
@@ -589,6 +593,7 @@ function App() {
           {showAIImportModal && (
             <AIImportModal
               gridSize={gridSize}
+              paletteColors={palette}
               onImport={handleAIImport}
               onLoadAsTileset={handleAILoadAsTileset}
               onClose={() => dispatch({ type: 'SET_SHOW_AI_IMPORT_MODAL', show: false })}
