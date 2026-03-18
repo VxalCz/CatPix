@@ -2,11 +2,11 @@ import type { SpriteEntry } from '../App'
 import type { Layer, LayerBlendMode } from './layers'
 import { createLayerFromImageData, createLayer } from './layers'
 
-export type Tool = 'draw' | 'erase' | 'fill' | 'eyedropper' | 'line' | 'rectangle' | 'ellipse' | 'selection' | 'replace' | 'text'
+export type Tool = 'draw' | 'erase' | 'fill' | 'eyedropper' | 'line' | 'rectangle' | 'ellipse' | 'selection' | 'replace' | 'text' | 'spray' | 'polygon'
 
 export type BrushShape = 'square' | 'circle' | 'dither' | 'custom'
 
-export type SelectionMode = 'box' | 'magic'
+export type SelectionMode = 'box' | 'magic' | 'lasso'
 
 export interface AppState {
   image: HTMLImageElement | null
@@ -30,6 +30,7 @@ export interface AppState {
   showNewProjectModal: boolean
   showAIImportModal: boolean
   showResizeModal: boolean
+  secondaryColor: string
   // Layers
   layers: Layer[]
   activeLayerId: string | null
@@ -57,6 +58,7 @@ export const initialState: AppState = {
   showNewProjectModal: false,
   showAIImportModal: false,
   showResizeModal: false,
+  secondaryColor: '#ffffff',
   layers: [],
   activeLayerId: null,
 }
@@ -109,6 +111,9 @@ export type AppAction =
   | { type: 'SET_LAYER_BLEND_MODE'; layerId: string; blendMode: LayerBlendMode }
   | { type: 'COMMIT_STROKE' }
   | { type: 'CLEAR_ALL_SPRITES' }
+  | { type: 'SET_SECONDARY_COLOR'; color: string }
+  | { type: 'SWAP_COLORS' }
+  | { type: 'MERGE_VISIBLE_LAYERS'; mergedLayer: Layer }
 
 // Actions that represent "significant" changes worth snapshotting for undo
 export const UNDOABLE_ACTIONS = new Set<AppAction['type']>([
@@ -132,6 +137,7 @@ export const UNDOABLE_ACTIONS = new Set<AppAction['type']>([
   'SET_LAYER_NAME',
   'RESIZE_CANVAS',
   'SET_SPRITE_DELAY',
+  'MERGE_VISIBLE_LAYERS',
 ])
 
 function initLayersFromTileData(tileData: ImageData): { layers: Layer[]; activeLayerId: string } {
@@ -453,6 +459,21 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'CLEAR_ALL_SPRITES':
       return { ...state, sprites: [], editingBankIndex: null }
+
+    case 'SET_SECONDARY_COLOR':
+      return { ...state, secondaryColor: action.color }
+
+    case 'SWAP_COLORS':
+      return { ...state, activeColor: state.secondaryColor, secondaryColor: state.activeColor }
+
+    case 'MERGE_VISIBLE_LAYERS': {
+      const invisible = state.layers.filter((l) => !l.visible)
+      return {
+        ...state,
+        layers: [...invisible, action.mergedLayer],
+        activeLayerId: action.mergedLayer.id,
+      }
+    }
 
     default:
       return state

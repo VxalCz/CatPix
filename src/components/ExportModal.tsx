@@ -1,11 +1,12 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { X, Package, Grid3x3, ArrowRight, ArrowDown, LayoutGrid, Film } from 'lucide-react'
+import { X, Package, Grid3x3, ArrowRight, ArrowDown, LayoutGrid, Film, Map } from 'lucide-react'
 import type { SheetLayout, ExportOptions, AtlasFormat } from '../utils/exportProject'
+import { exportTilemap } from '../utils/exportProject'
 import type { GifExportOptions } from '../utils/exportGif'
 import type { SpriteEntry } from '../App'
 import { useAnimationPlayer } from '../hooks/useAnimationPlayer'
 
-type ExportTab = 'spritesheet' | 'gif'
+type ExportTab = 'spritesheet' | 'gif' | 'tilemap'
 
 interface ExportModalProps {
   sprites: SpriteEntry[]
@@ -211,6 +212,17 @@ export function ExportModal({
             <Film size={13} />
             Animated GIF
           </button>
+          <button
+            onClick={() => setActiveTab('tilemap')}
+            className={`flex-1 px-4 py-2 text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeTab === 'tilemap'
+                ? 'text-accent border-b-2 border-accent'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <Map size={13} />
+            Tilemap
+          </button>
         </div>
 
         {/* Body */}
@@ -394,8 +406,7 @@ export function ExportModal({
                 </div>
               </div>
             </>
-          ) : (
-            /* GIF Tab */
+          ) : activeTab === 'gif' ? (
             <>
               {/* Frame Range */}
               <div>
@@ -522,6 +533,28 @@ export function ExportModal({
                 </div>
               </div>
             </>
+          ) : (
+            /* Tilemap Tab */
+            <div className="space-y-3">
+              <p className="text-xs text-text-secondary">
+                Exports a <strong>Tiled-compatible</strong> ZIP with:
+              </p>
+              <ul className="text-xs text-text-muted space-y-1 pl-4 list-disc">
+                <li><code>tileset.png</code> — horizontal sprite strip</li>
+                <li><code>tileset.tsj</code> — Tiled tileset definition</li>
+                <li><code>tilemap.tmj</code> — 1-row tilemap (1 tile per sprite)</li>
+              </ul>
+              <div className="bg-bg-primary rounded p-3 text-xs text-text-muted">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  <span className="text-text-secondary">Sprites</span>
+                  <span className="text-text-primary font-mono">{spriteCount}</span>
+                  <span className="text-text-secondary">Tile size</span>
+                  <span className="text-text-primary font-mono">{tileWidth} × {tileHeight} px</span>
+                  <span className="text-text-secondary">Sheet</span>
+                  <span className="text-text-primary font-mono">{spriteCount * tileWidth} × {tileHeight} px</span>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 
@@ -541,13 +574,21 @@ export function ExportModal({
               <Package size={13} />
               Export .zip
             </button>
-          ) : (
+          ) : activeTab === 'gif' ? (
             <button
               onClick={handleExportGif}
               className="px-4 py-1.5 rounded text-xs bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer flex items-center gap-1.5"
             >
               <Film size={13} />
               Export .gif
+            </button>
+          ) : (
+            <button
+              onClick={() => exportTilemap(sprites)}
+              className="px-4 py-1.5 rounded text-xs bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              <Map size={13} />
+              Export Tilemap .zip
             </button>
           )}
         </div>

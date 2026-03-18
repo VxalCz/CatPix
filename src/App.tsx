@@ -16,7 +16,7 @@ import { exportProject, exportCatPixProject, type ExportOptions } from './utils/
 import { exportGif, type GifExportOptions } from './utils/exportGif'
 import { importGif } from './utils/gifImport'
 import { addOutline } from './utils/outlineEffect'
-import { flattenLayers } from './state/layers'
+import { flattenLayers, createLayerFromImageData } from './state/layers'
 import { saveProject, loadProject, restoreSprites, restoreImage } from './utils/storage'
 import { initialState } from './state/appReducer'
 import type { AppAction } from './state/appReducer'
@@ -58,7 +58,7 @@ function App() {
     selectionMode, magicTolerance,
     sprites, editingBankIndex,
     showExportModal, showNewProjectModal, showAIImportModal, showResizeModal,
-    layers, activeLayerId,
+    layers, activeLayerId, secondaryColor,
   } = state
 
   const [showCustomBrushModal, setShowCustomBrushModal] = useState(false)
@@ -297,6 +297,15 @@ function App() {
     dispatch({ type: 'SET_SPRITE_DELAY', id, delay })
   }, [])
 
+  const handleMergeVisibleLayers = useCallback(() => {
+    const visible = layers.filter((l) => l.visible)
+    if (visible.length === 0) return
+    const merged = flattenLayers(visible, compositorCanvasRef.current)
+    const newLayer = createLayerFromImageData(merged, 'Merged')
+    dispatch({ type: 'MERGE_VISIBLE_LAYERS', mergedLayer: newLayer })
+    dispatch({ type: 'COMMIT_STROKE' })
+  }, [layers])
+
   const handleOutlineEffect = useCallback(() => {
     if (!activeLayer) return
     const outlined = addOutline(activeLayer.imageData, activeColor)
@@ -440,6 +449,10 @@ function App() {
       if (e.key === 'r' && !e.ctrlKey && !e.metaKey) dispatch({ type: 'SET_ACTIVE_TOOL', tool: 'rectangle' })
       if (e.key === 'o' || e.key === 'O') dispatch({ type: 'SET_ACTIVE_TOOL', tool: 'ellipse' })
       if (e.key === 'm' || e.key === 'M') dispatch({ type: 'SET_ACTIVE_TOOL', tool: 'selection' })
+      if (e.key === 'a' || e.key === 'A') dispatch({ type: 'SET_ACTIVE_TOOL', tool: 'spray' })
+      if (e.key === 'p' || e.key === 'P') dispatch({ type: 'SET_ACTIVE_TOOL', tool: 'polygon' })
+      // Swap fg/bg colors
+      if (e.key === 'x' || e.key === 'X') dispatch({ type: 'SWAP_COLORS' })
 
       // Navigate sprites with [ and ]
       if (e.key === '[' && sprites.length > 0) {
@@ -492,6 +505,9 @@ function App() {
               onToolChange={(tool) => dispatch({ type: 'SET_ACTIVE_TOOL', tool })}
               activeColor={activeColor}
               onColorChange={(color) => dispatch({ type: 'SET_ACTIVE_COLOR', color })}
+              secondaryColor={secondaryColor}
+              onSecondaryColorChange={(color) => dispatch({ type: 'SET_SECONDARY_COLOR', color })}
+              onSwapColors={() => dispatch({ type: 'SWAP_COLORS' })}
               colorHistory={colorHistory}
               snapToPalette={snapToPalette}
               onSnapToPaletteChange={(enabled) => dispatch({ type: 'SET_SNAP_TO_PALETTE', enabled })}
@@ -564,6 +580,7 @@ function App() {
                 onSetName={(id, name) => dispatch({ type: 'SET_LAYER_NAME', layerId: id, name })}
                 onSetBlendMode={(id, blendMode: LayerBlendMode) => dispatch({ type: 'SET_LAYER_BLEND_MODE', layerId: id, blendMode })}
                 onReorder={(from, to) => dispatch({ type: 'REORDER_LAYERS', fromIndex: from, toIndex: to })}
+                onMergeVisible={handleMergeVisibleLayers}
               />
               <AnimationPreview sprites={sprites} />
             </div>

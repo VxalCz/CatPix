@@ -318,6 +318,29 @@ export function PixelEditor({
         ;[r, g, b, a] = bestRgba
       }
 
+      // Spray tool: randomly scatter pixels within brush radius
+      if (tool === 'spray') {
+        const radius = Math.max(2, brushSizeRef.current * 2)
+        const count = Math.max(1, Math.floor(radius * radius * 0.25))
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2
+          const dist = Math.random() * radius
+          const spx = px + Math.round(Math.cos(angle) * dist)
+          const spy = py + Math.round(Math.sin(angle) * dist)
+          const points = getMirroredPixelsRef.current(spx, spy)
+          for (const pt of points) {
+            const wx = wrap ? mod(pt.px, w) : pt.px
+            const wy = wrap ? mod(pt.py, h) : pt.py
+            if (wx < 0 || wx >= w || wy < 0 || wy >= h) continue
+            const idx = (wy * w + wx) * 4
+            if (lockAlphaRef.current && data[idx + 3] === 0) continue
+            data[idx] = r; data[idx + 1] = g; data[idx + 2] = b; data[idx + 3] = a
+          }
+        }
+        redrawRef.current()
+        return
+      }
+
       for (const { dx, dy } of brushOffsets) {
         const brushPx = px + dx
         const brushPy = py + dy
@@ -492,6 +515,7 @@ export function PixelEditor({
     selectionContent,
     isOverSelection,
     nudge,
+    fitView,
     handleWheel,
     handleContainerMouseDown: _handleContainerMouseDown,
     handleContainerMouseMove,
@@ -577,7 +601,7 @@ export function PixelEditor({
         lockAlpha={lockAlpha} setLockAlpha={setLockAlpha}
         showTiling={showTiling} setShowTiling={setShowTiling}
         spriteW={spriteW} spriteH={spriteH} zoom={zoom}
-        nudge={nudge}
+        nudge={nudge} fitView={fitView}
         handleRotate={handleRotate} handleFlip={handleFlip}
         refImage={refImage} setRefImage={setRefImage}
         refOpacity={refOpacity} setRefOpacity={setRefOpacity}

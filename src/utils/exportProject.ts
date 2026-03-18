@@ -263,6 +263,101 @@ export async function exportCatPixProject(
 }
 
 /**
+ * Export a Tiled-compatible tileset + tilemap JSON.
+ * Sprites are laid out in a horizontal strip; the tilemap is a 1-row map.
+ */
+export async function exportTilemap(sprites: SpriteEntry[]): Promise<void> {
+  if (sprites.length === 0) return
+
+  const tileW = sprites[0].width
+  const tileH = sprites[0].height
+  const cols = sprites.length
+
+  // Build tileset spritesheet (horizontal strip)
+  const sheet = document.createElement('canvas')
+  sheet.width = cols * tileW
+  sheet.height = tileH
+  const ctx = sheet.getContext('2d')
+  if (!ctx) return
+  ctx.imageSmoothingEnabled = false
+  sprites.forEach((sprite, i) => {
+    const c = imageDataToCanvas(sprite.imageData)
+    ctx.drawImage(c, i * tileW, 0)
+  })
+
+  const pngBlob = await new Promise<Blob>((resolve, reject) => {
+    sheet.toBlob((b) => b ? resolve(b) : reject(new Error('PNG encode failed')), 'image/png')
+  })
+
+  // Tiled tileset JSON (TSJ)
+  const tileset = {
+    columns: cols,
+    image: 'tileset.png',
+    imageheight: tileH,
+    imagewidth: cols * tileW,
+    margin: 0,
+    name: 'CatPix Tileset',
+    spacing: 0,
+    tilecount: cols,
+    tiledversion: '1.10.2',
+    tileheight: tileH,
+    tilewidth: tileW,
+    type: 'tileset',
+    version: '1.10',
+    tiles: sprites.map((s, i) => ({ id: i, type: s.name })),
+  }
+
+  // Tiled tilemap JSON (TMJ) — simple 1×N map
+  const tilemap = {
+    height: 1,
+    infinite: false,
+    layers: [
+      {
+        data: sprites.map((_, i) => i + 1), // Tiled uses 1-based tile IDs
+        height: 1,
+        id: 1,
+        name: 'Sprites',
+        opacity: 1,
+        type: 'tilelayer',
+        visible: true,
+        width: cols,
+        x: 0,
+        y: 0,
+      },
+    ],
+    nextlayerid: 2,
+    nextobjectid: 1,
+    orientation: 'orthogonal',
+    renderorder: 'right-down',
+    tiledversion: '1.10.2',
+    tileheight: tileH,
+    tilesets: [
+      {
+        firstgid: 1,
+        source: 'tileset.tsj',
+      },
+    ],
+    tilewidth: tileW,
+    type: 'map',
+    version: '1.10',
+    width: cols,
+  }
+
+  const zip = new JSZip()
+  zip.file('tileset.png', pngBlob)
+  zip.file('tileset.tsj', JSON.stringify(tileset, null, 2))
+  zip.file('tilemap.tmj', JSON.stringify(tilemap, null, 2))
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' })
+  const url = URL.createObjectURL(zipBlob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'catpix_tilemap.zip'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+/**
  * Import a .catpix project file.
  */
 export async function importCatPixProject(file: File): Promise<{

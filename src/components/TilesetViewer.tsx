@@ -22,6 +22,9 @@ export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selecte
   const [isPanning, setIsPanning] = useState(false)
   const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   const [hoveredTile, setHoveredTile] = useState<{ col: number; row: number } | null>(null)
+  const [gridHex, setGridHex] = useState('#ffffff')
+  const [gridOpacity, setGridOpacity] = useState(20) // 0-100
+  const gridColor = gridHex + Math.round(gridOpacity / 100 * 255).toString(16).padStart(2, '0')
 
   const canvasWidth = image ? image.width : 512
   const canvasHeight = image ? image.height : 512
@@ -34,7 +37,7 @@ export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selecte
       ctx.drawImage(image, 0, 0)
 
       // Batch all grid lines into a single path
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
+      ctx.strokeStyle = gridColor
       ctx.lineWidth = 1
       ctx.beginPath()
 
@@ -74,7 +77,7 @@ export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selecte
         )
       }
     },
-    [image, gridSize, tileCountX, tileCountY, selectedTile],
+    [image, gridSize, tileCountX, tileCountY, selectedTile, gridColor],
   )
 
   const { canvasRef, redraw } = useCanvas({
@@ -82,6 +85,9 @@ export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selecte
     height: canvasHeight,
     draw: drawGrid,
   })
+
+  // Redraw when grid color changes
+  useEffect(() => { redraw() }, [redraw, gridColor])
 
   useEffect(() => {
     redraw()
@@ -265,6 +271,18 @@ export function TilesetViewer({ image, gridSize, tileCountX, tileCountY, selecte
             </span>
           </>
         )}
+        {/* Grid color + opacity */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="text-text-muted">Grid</span>
+          <div className="relative w-4 h-4">
+            <div className="w-4 h-4 rounded border border-border-default cursor-pointer" style={{ backgroundColor: gridHex }} />
+            <input type="color" value={gridHex} onChange={(e) => setGridHex(e.target.value)}
+              className="absolute inset-0 opacity-0 cursor-pointer" aria-label="Grid color" />
+          </div>
+          <input type="range" min={0} max={80} value={gridOpacity}
+            onChange={(e) => setGridOpacity(Number(e.target.value))}
+            className="w-16 accent-accent" title={`Grid opacity: ${gridOpacity}%`} />
+        </div>
       </div>
 
       {/* Canvas area */}

@@ -41,11 +41,11 @@ Key state fields:
 - `editingBankIndex` — index of the sprite loaded from bank (`null` if editing from tileset)
 - `sprites: SpriteEntry[]` — the sprite bank collection
 - `layers: Layer[]` — per-sprite layers (max 8); `activeLayerId: string | null`
-- `activeTool` — `'draw' | 'erase' | 'fill' | 'eyedropper' | 'line' | 'rectangle' | 'ellipse' | 'selection'`
-- `activeColor` — hex string
+- `activeTool` — `'draw' | 'erase' | 'fill' | 'eyedropper' | 'line' | 'rectangle' | 'ellipse' | 'selection' | 'replace' | 'text' | 'spray' | 'polygon'`
+- `activeColor` / `secondaryColor` — hex strings; `X` key swaps them
 - `brushSize` — 1–16
-- `brushShape` — `'square' | 'circle' | 'dither'`
-- `selectionMode` — `'box' | 'magic'`; `magicTolerance` — 0–100
+- `brushShape` — `'square' | 'circle' | 'dither' | 'custom'`
+- `selectionMode` — `'box' | 'magic' | 'lasso'`; `magicTolerance` — 0–100
 - Modal flags: `showExportModal`, `showNewProjectModal`, `showAIImportModal`
 
 ### Component layout
@@ -68,6 +68,7 @@ App
 SpriteBank (bottom bar)        — thumbnail strip of saved sprites; select/duplicate/remove; export trigger
 ExportModal (overlay)          — spritesheet tab (layout, padding, atlas format, individual PNGs)
                                  + GIF tab (frame range, FPS, scale, loop, transparent bg)
+                                 + Tilemap tab (Tiled-compatible .tsj + .tmj + PNG zip)
 AIImportModal (overlay)        — two-step AI sprite import (configure → preview)
 NewProjectModal (overlay)      — create a blank canvas with a chosen tile size
 ```
@@ -150,6 +151,10 @@ Tailwind CSS v4 via the `@tailwindcss/vite` plugin (no `tailwind.config.js`). Us
 | `Ctrl+V` | Paste selection |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Shift+Z` | Redo |
+| `A` | Spray tool |
+| `P` | Polygon tool |
+| `X` | Swap fg/bg colors |
+| `0` | Fit canvas to view |
 | `Arrow keys` | Move selection content |
 | `Shift` (shapes) | Constrain to square/circle |
 | `Escape` | Close modals |

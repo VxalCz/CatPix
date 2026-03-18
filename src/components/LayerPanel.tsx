@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Eye, EyeOff, Trash2, Plus, Layers } from 'lucide-react'
+import { Eye, EyeOff, Trash2, Plus, Layers, GitMerge } from 'lucide-react'
 import type { Layer, LayerBlendMode } from '../state/layers'
 import { MAX_LAYERS } from '../state/layers'
 import { useEditableField } from '../hooks/useEditableField'
@@ -30,6 +30,7 @@ interface LayerPanelProps {
   onSetName: (id: string, name: string) => void
   onSetBlendMode: (id: string, blendMode: LayerBlendMode) => void
   onReorder: (fromIndex: number, toIndex: number) => void
+  onMergeVisible: () => void
 }
 
 export function LayerPanel({
@@ -43,6 +44,7 @@ export function LayerPanel({
   onSetName,
   onSetBlendMode,
   onReorder,
+  onMergeVisible,
 }: LayerPanelProps) {
   const {
     editingId: editingNameId,
@@ -69,15 +71,26 @@ export function LayerPanel({
             Layers
           </span>
         </h3>
-        <button
-          onClick={onAddLayer}
-          disabled={layers.length >= MAX_LAYERS}
-          className="p-1 rounded bg-bg-hover text-text-secondary hover:text-text-primary transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-          title={`Add layer (max ${MAX_LAYERS})`}
-          aria-label="Add layer"
-        >
-          <Plus size={14} />
-        </button>
+        <div className="flex gap-1">
+          <button
+            onClick={onMergeVisible}
+            disabled={layers.filter((l) => l.visible).length < 2}
+            className="p-1 rounded bg-bg-hover text-text-secondary hover:text-text-primary transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Merge visible layers"
+            aria-label="Merge visible layers"
+          >
+            <GitMerge size={14} />
+          </button>
+          <button
+            onClick={onAddLayer}
+            disabled={layers.length >= MAX_LAYERS}
+            className="p-1 rounded bg-bg-hover text-text-secondary hover:text-text-primary transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+            title={`Add layer (max ${MAX_LAYERS})`}
+            aria-label="Add layer"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
       </div>
 
       <div className="space-y-0.5">

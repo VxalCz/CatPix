@@ -1,7 +1,7 @@
 import {
   Trash2, Download, FlipHorizontal2, FlipVertical2,
   Save, Repeat, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Layers, Plus,
-  RotateCw, RotateCcw, ImageIcon, Grid3x3, Maximize2, Sparkles,
+  RotateCw, RotateCcw, ImageIcon, Grid3x3, Maximize2, Sparkles, Minimize2,
 } from 'lucide-react'
 
 interface PixelEditorControlsProps {
@@ -25,6 +25,7 @@ interface PixelEditorControlsProps {
   zoom: number
   // Nudge
   nudge: (dx: number, dy: number) => void
+  fitView: () => void
   // Transform
   handleRotate: (dir: 'cw' | 'ccw') => void
   handleFlip: (axis: 'horizontal' | 'vertical') => void
@@ -57,7 +58,7 @@ export function PixelEditorControls({
   lockAlpha, setLockAlpha,
   showTiling, setShowTiling,
   spriteW, spriteH, zoom,
-  nudge,
+  nudge, fitView,
   handleRotate, handleFlip,
   refImage, setRefImage,
   refOpacity, setRefOpacity,
@@ -186,6 +187,16 @@ export function PixelEditorControls({
           <button onClick={() => nudge(1, 0)} disabled={!tileData}
             className="p-0.5 rounded bg-bg-hover text-text-secondary hover:text-text-primary disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed" title="Nudge right" aria-label="Nudge right">
             <ArrowRight size={12} />
+          </button>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={fitView}
+            className="p-0.5 rounded bg-bg-hover text-text-secondary hover:text-text-primary cursor-pointer"
+            title="Fit to view (0)"
+            aria-label="Fit to view"
+          >
+            <Minimize2 size={12} />
           </button>
         </div>
         <p className="text-xs text-text-muted">
