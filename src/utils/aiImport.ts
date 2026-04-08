@@ -287,22 +287,23 @@ export function quantizeColors(imageData: ImageData, threshold: number): ImageDa
 
 /**
  * Slice an ImageData into a grid of tiles.
+ * Uses pure array manipulation (no canvas) for Worker compatibility.
  */
 export function sliceIntoTiles(imageData: ImageData, tileW: number, tileH: number): ImageData[] {
-  const canvas = document.createElement('canvas')
-  canvas.width = imageData.width
-  canvas.height = imageData.height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return []
-  ctx.putImageData(imageData, 0, 0)
-
-  const tiles: ImageData[] = []
+  const { width, data } = imageData
   const cols = Math.floor(imageData.width / tileW)
   const rows = Math.floor(imageData.height / tileH)
+  const tiles: ImageData[] = []
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
-      tiles.push(ctx.getImageData(col * tileW, row * tileH, tileW, tileH))
+      const tile = new ImageData(tileW, tileH)
+      for (let y = 0; y < tileH; y++) {
+        const srcOffset = ((row * tileH + y) * width + col * tileW) * 4
+        const dstOffset = y * tileW * 4
+        tile.data.set(data.subarray(srcOffset, srcOffset + tileW * 4), dstOffset)
+      }
+      tiles.push(tile)
     }
   }
 

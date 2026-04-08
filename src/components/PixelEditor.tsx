@@ -127,9 +127,11 @@ export function PixelEditor({
   // Working buffer: mutated in-place during drag, committed on mouseup
   const workingBufferRef = useRef<ImageData | null>(null)
 
-  // Reusable offscreen canvases for redraw
-  const onionSkinCanvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'))
-  const displayCanvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'))
+  // Reusable offscreen canvases for redraw (lazy init to avoid allocation on every render)
+  const onionSkinCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  if (!onionSkinCanvasRef.current) onionSkinCanvasRef.current = document.createElement('canvas')
+  const displayCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  if (!displayCanvasRef.current) displayCanvasRef.current = document.createElement('canvas')
 
   // Cached active color as RGBA tuple
   const activeRgbaRef = useRef<[number, number, number, number]>([0, 0, 0, 255])
@@ -239,6 +241,7 @@ export function PixelEditor({
 
     if (onionSkin && onionSkinData) {
       const tmp = onionSkinCanvasRef.current
+      if (!tmp) return
       if (tmp.width !== onionSkinData.width) tmp.width = onionSkinData.width
       if (tmp.height !== onionSkinData.height) tmp.height = onionSkinData.height
       const tmpCtx = tmp.getContext('2d')
@@ -252,6 +255,7 @@ export function PixelEditor({
     const dataToShow = (isPaintDrawingRef.current ? workingBufferRef.current : null) ?? displayData ?? tileData
     if (dataToShow) {
       const tmp = displayCanvasRef.current
+      if (!tmp) return
       if (tmp.width !== dataToShow.width) tmp.width = dataToShow.width
       if (tmp.height !== dataToShow.height) tmp.height = dataToShow.height
       const tmpCtx = tmp.getContext('2d')

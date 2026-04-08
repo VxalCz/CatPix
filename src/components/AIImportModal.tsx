@@ -1,24 +1,13 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { X, Sparkles, Upload, ArrowRight, ArrowLeft, Download, Clipboard } from 'lucide-react'
+import { X, Sparkles, Upload, ArrowRight, ArrowLeft, Download, Clipboard, Loader2 } from 'lucide-react'
 import {
-  detectScaleFactor,
-  detectBackgroundColor,
-  removeBackgroundColor,
-  downscaleImage,
-  quantizeColors,
-  sliceIntoTiles,
-  isEmptyTile,
-  countUniqueColors,
-  cleanEdges,
-  snapToPaletteColors,
-  medianCutQuantize,
-  extractConnectedSprites,
   type ScaleCandidate,
   type DownscaleMethod,
 } from '../utils/aiImport'
 import { hexToRgba } from '../utils/colorUtils'
 import { presetPalettes } from '../data/presetPalettes'
 import type { PaletteColor } from '../hooks/usePalette'
+import { useAIImportWorker } from '../hooks/useAIImportWorker'
 
 interface AIImportModalProps {
   gridSize: number
@@ -44,6 +33,8 @@ function drawCheckerboard(ctx: CanvasRenderingContext2D, width: number, height: 
 }
 
 export function AIImportModal({ gridSize, paletteColors, onImport, onLoadAsTileset, onClose }: AIImportModalProps) {
+  const worker = useAIImportWorker()
+  const [processing, setProcessing] = useState(false)
   const [step, setStep] = useState<Step>('configure')
 
   // Source image
@@ -110,12 +101,13 @@ export function AIImportModal({ gridSize, paletteColors, onImport, onLoadAsTiles
     const imgData = ctx.getImageData(0, 0, img.width, img.height)
     setSourceImageData(imgData)
 
-    const results = detectScaleFactor(imgData)
-    setCandidates(results)
-    if (results.length > 0 && results[0].confidence > 0.7) {
-      setScaleFactor(results[0].factor)
-    }
-  }, [])
+    worker.detectScale(imgData).then((results) => {
+      setCandidates(results)
+      if (results.length > 0 && results[0].confidence > 0.7) {
+        setScaleFactor(results[0].factor)
+      }
+    })
+  }, [worker])
 
   const loadImageFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) return
@@ -208,79 +200,77 @@ export function AIImportModal({ gridSize, paletteColors, onImport, onLoadAsTiles
   const trueWidth = sourceImage ? Math.floor(sourceImage.width / scaleFactor) : 0
   const trueHeight = sourceImage ? Math.floor(sourceImage.height / scaleFactor) : 0
 
-  // Process pipeline — shared between live preview and final generate
-  const processImage = useCallback((srcData: ImageData): ImageData => {
-    let processed = downscaleImage(srcData, scaleFactor, downscaleMethod)
-    if (doCleanEdges) {
-      processed = cleanEdges(processed, cleanEdgesThreshold)
-    }
-    if (removeBg && bgColor) {
-      processed = removeBackgroundColor(processed, bgColor, bgTolerance)
-    }
-    if (quantizeMode === 'threshold') {
-      processed = quantizeColors(processed, quantizeThreshold)
-    } else if (quantizeMode === 'median') {
-      processed = medianCutQuantize(processed, medianMaxColors)
-    } else if (quantizeMode === 'palette' && paletteRgba.length > 0) {
-      processed = snapToPaletteColors(processed, paletteRgba)
-    }
-    return processed
-  }, [scaleFactor, downscaleMethod, doCleanEdges, cleanEdgesThreshold, removeBg, bgColor, bgTolerance, quantizeMode, quantizeThreshold, medianMaxColors, paletteRgba])
+  // Shared processing options for the worker
+  const processingOpts = useMemo(() => ({
+    scaleFactor,
+    downscaleMethod,
+    doCleanEdges,
+    cleanEdgesThreshold,
+    removeBg,
+    bgColor,
+    bgTolerance,
+    quantizeMode,
+    quantizeThreshold,
+    medianMaxColors,
+    paletteRgba,
+  }), [scaleFactor, downscaleMethod, doCleanEdges, cleanEdgesThreshold, removeBg, bgColor, bgTolerance, quantizeMode, quantizeThreshold, medianMaxColors, paletteRgba])
 
-  // Live preview — debounced update of a small thumbnail on the configure step
+  // Live preview — debounced, runs processing in Web Worker
   useEffect(() => {
     if (!sourceImageData || step !== 'configure') return
     if (liveTimerRef.current) clearTimeout(liveTimerRef.current)
     liveTimerRef.current = setTimeout(() => {
-      const processed = processImage(sourceImageData)
-      const canvas = liveCanvasRef.current
-      if (!canvas) return
-      const maxDim = 128
-      const scale = Math.min(maxDim / processed.width, maxDim / processed.height, 8)
-      canvas.width = Math.ceil(processed.width * scale)
-      canvas.height = Math.ceil(processed.height * scale)
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
+      worker.processImage(sourceImageData, processingOpts).then((processed) => {
+        const canvas = liveCanvasRef.current
+        if (!canvas) return
+        const maxDim = 128
+        const scale = Math.min(maxDim / processed.width, maxDim / processed.height, 8)
+        canvas.width = Math.ceil(processed.width * scale)
+        canvas.height = Math.ceil(processed.height * scale)
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
 
-      // Checkerboard
-      const cs = Math.max(4, scale)
-      drawCheckerboard(ctx, canvas.width, canvas.height, cs)
+        // Checkerboard
+        const cs = Math.max(4, scale)
+        drawCheckerboard(ctx, canvas.width, canvas.height, cs)
 
-      const tmp = document.createElement('canvas')
-      tmp.width = processed.width
-      tmp.height = processed.height
-      const tmpCtx = tmp.getContext('2d')
-      if (!tmpCtx) return
-      tmpCtx.putImageData(processed, 0, 0)
-      ctx.imageSmoothingEnabled = false
-      ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height)
+        const tmp = document.createElement('canvas')
+        tmp.width = processed.width
+        tmp.height = processed.height
+        const tmpCtx = tmp.getContext('2d')
+        if (!tmpCtx) return
+        tmpCtx.putImageData(processed, 0, 0)
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height)
+      })
     }, 150)
     return () => { if (liveTimerRef.current) clearTimeout(liveTimerRef.current) }
-  }, [sourceImageData, step, processImage])
+  }, [sourceImageData, step, processingOpts, worker])
 
-  // Generate preview when moving to step 2
+  // Generate preview when moving to step 2 — runs in Web Worker
   const generatePreview = useCallback(() => {
-    if (!sourceImageData) return
+    if (!sourceImageData || processing) return
+    setProcessing(true)
 
-    const processed = processImage(sourceImageData)
-    setDownscaled(processed)
-    setColorCount(countUniqueColors(processed))
+    const tileW = tileSize * spriteTilesX
+    const tileH = tileSize * spriteTilesY
 
-    let tiles: ImageData[]
-    if (sliceMode === 'auto') {
-      tiles = extractConnectedSprites(processed, autoMinPixels)
-    } else {
-      const tileW = tileSize * spriteTilesX
-      const tileH = tileSize * spriteTilesY
-      tiles = sliceIntoTiles(processed, tileW, tileH)
-      if (skipEmpty) {
-        tiles = tiles.filter((t) => !isEmptyTile(t))
-      }
-    }
-    setPreviewTiles(tiles)
-    setTileEnabled(new Array(tiles.length).fill(true))
-    setStep('preview')
-  }, [sourceImageData, processImage, sliceMode, autoMinPixels, tileSize, spriteTilesX, spriteTilesY, skipEmpty])
+    worker.processAndSlice(sourceImageData, {
+      ...processingOpts,
+      sliceMode,
+      tileW,
+      tileH,
+      skipEmpty,
+      autoMinPixels,
+    }).then(({ processed, tiles, colorCount: cc }) => {
+      setDownscaled(processed)
+      setColorCount(cc)
+      setPreviewTiles(tiles)
+      setTileEnabled(new Array(tiles.length).fill(true))
+      setStep('preview')
+      setProcessing(false)
+    })
+  }, [sourceImageData, processing, processingOpts, worker, sliceMode, autoMinPixels, tileSize, spriteTilesX, spriteTilesY, skipEmpty])
 
   // Draw preview canvas
   useEffect(() => {
@@ -725,7 +715,7 @@ export function AIImportModal({ gridSize, paletteColors, onImport, onLoadAsTiles
                           const checked = e.target.checked
                           setRemoveBg(checked)
                           if (checked && sourceImageData && !bgColor) {
-                            setBgColor(detectBackgroundColor(sourceImageData))
+                            worker.detectBgColor(sourceImageData).then(setBgColor)
                           }
                         }}
                         className="accent-accent"
@@ -966,11 +956,20 @@ export function AIImportModal({ gridSize, paletteColors, onImport, onLoadAsTiles
             {step === 'configure' && (
               <button
                 onClick={generatePreview}
-                disabled={!sourceImageData}
+                disabled={!sourceImageData || processing}
                 className="px-4 py-1.5 rounded text-xs bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Next: Preview
-                <ArrowRight size={12} />
+                {processing ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Next: Preview
+                    <ArrowRight size={12} />
+                  </>
+                )}
               </button>
             )}
             {step === 'preview' && (

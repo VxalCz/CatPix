@@ -43,6 +43,164 @@ const SpriteThumb = memo(function SpriteThumb({ sprite }: { sprite: SpriteEntry 
   )
 })
 
+interface SpriteItemProps {
+  sprite: SpriteEntry
+  index: number
+  isEditing: boolean
+  isDragged: boolean
+  isDropTarget: boolean
+  editingNameId: string | null
+  editingNameValue: string
+  editingDelayId: string | null
+  editingDelayValue: string
+  onSelect: (index: number) => void
+  onRemove: (id: string) => void
+  onDuplicate: (id: string) => void
+  onDragStart: (e: React.DragEvent, idx: number) => void
+  onDragOver: (e: React.DragEvent, idx: number) => void
+  onDragLeave: () => void
+  onDrop: (e: React.DragEvent, idx: number) => void
+  onDragEnd: () => void
+  onStartRename: (id: string, name: string) => void
+  onSetEditingNameValue: (value: string) => void
+  onCommitRename: () => void
+  onCancelRename: () => void
+  onStartDelayEdit: (id: string, delay: string) => void
+  onSetEditingDelayValue: (value: string) => void
+  onCommitDelay: (id: string) => void
+  onCancelDelay: () => void
+  onSetDelay: (id: string, delay: number | undefined) => void
+}
+
+const SpriteItem = memo(function SpriteItem({
+  sprite,
+  index,
+  isEditing,
+  isDragged,
+  isDropTarget,
+  editingNameId,
+  editingNameValue,
+  editingDelayId,
+  editingDelayValue,
+  onSelect,
+  onRemove,
+  onDuplicate,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  onStartRename,
+  onSetEditingNameValue,
+  onCommitRename,
+  onCancelRename,
+  onStartDelayEdit,
+  onSetEditingDelayValue,
+  onCommitDelay,
+  onCancelDelay,
+}: SpriteItemProps) {
+  return (
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, index)}
+      onDragOver={(e) => onDragOver(e, index)}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => onDrop(e, index)}
+      onDragEnd={onDragEnd}
+      className={`relative group shrink-0 rounded p-0.5 transition-colors cursor-pointer ${
+        isEditing
+          ? 'border-2 border-accent'
+          : 'border border-border-default hover:border-accent'
+      } ${isDragged ? 'opacity-40' : ''} ${
+        isDropTarget ? 'ring-2 ring-accent' : ''
+      }`}
+      style={{
+        background: `
+          repeating-conic-gradient(#1a1a2e 0% 25%, #0f0f1e 0% 50%)
+          50% / 8px 8px
+        `,
+      }}
+      title={`${sprite.name} (click to edit, double-click name to rename)`}
+      onClick={() => onSelect(index)}
+    >
+      <SpriteThumb sprite={sprite} />
+
+      {/* Name / rename input */}
+      <span
+        className="absolute bottom-0 left-0 right-0 bg-black/70 text-[9px] text-text-muted px-1 truncate text-center"
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          onStartRename(sprite.id, sprite.name)
+        }}
+      >
+        {editingNameId === sprite.id ? (
+          <input
+            autoFocus
+            value={editingNameValue}
+            onChange={(e) => onSetEditingNameValue(e.target.value)}
+            onBlur={onCommitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onCommitRename()
+              if (e.key === 'Escape') onCancelRename()
+              e.stopPropagation()
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full bg-transparent text-white text-[9px] text-center outline-none border-b border-accent"
+          />
+        ) : (
+          sprite.name
+        )}
+      </span>
+
+      {/* Per-frame delay badge */}
+      <span
+        className="absolute top-0 left-0 bg-black/70 text-[8px] text-text-muted px-0.5 cursor-pointer hover:text-text-primary"
+        title="Frame delay (ms) — double-click to edit"
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          onStartDelayEdit(sprite.id, String(sprite.delay ?? ''))
+        }}
+      >
+        {editingDelayId === sprite.id ? (
+          <input
+            autoFocus
+            value={editingDelayValue}
+            onChange={(e) => onSetEditingDelayValue(e.target.value)}
+            onBlur={() => onCommitDelay(sprite.id)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onCommitDelay(sprite.id)
+              if (e.key === 'Escape') onCancelDelay()
+              e.stopPropagation()
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-10 bg-transparent text-white text-[8px] outline-none border-b border-accent"
+            placeholder="ms"
+          />
+        ) : sprite.delay ? `${sprite.delay}ms` : '·'}
+      </span>
+
+      {/* Duplicate button */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onDuplicate(sprite.id) }}
+        className="absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full bg-accent text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+        title="Duplicate"
+        aria-label={`Duplicate ${sprite.name}`}
+      >
+        <Copy size={9} />
+      </button>
+
+      {/* Remove button */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove(sprite.id) }}
+        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+        aria-label={`Remove ${sprite.name}`}
+      >
+        <X size={10} />
+      </button>
+    </div>
+  )
+})
+
 export function SpriteBank({
   sprites,
   editingBankIndex,
@@ -118,6 +276,21 @@ export function SpriteBank({
     setDropTarget(null)
   }, [])
 
+  const handleStartDelayEdit = useCallback((id: string, delay: string) => {
+    setEditingDelayId(id)
+    setEditingDelayValue(delay)
+  }, [])
+
+  const handleCommitDelay = useCallback((id: string) => {
+    const ms = parseInt(editingDelayValue)
+    onSetDelay(id, isNaN(ms) || ms <= 0 ? undefined : ms)
+    setEditingDelayId(null)
+  }, [editingDelayValue, onSetDelay])
+
+  const handleCancelDelay = useCallback(() => {
+    setEditingDelayId(null)
+  }, [])
+
   return (
     <>
       <div className="h-20 bg-bg-panel border-t border-border-default flex items-center shrink-0">
@@ -137,114 +310,35 @@ export function SpriteBank({
             </span>
           ) : (
             sprites.map((sprite, idx) => (
-              <div
+              <SpriteItem
                 key={sprite.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, idx)}
-                onDragOver={(e) => handleDragOver(e, idx)}
+                sprite={sprite}
+                index={idx}
+                isEditing={editingBankIndex === idx}
+                isDragged={dragIndex === idx}
+                isDropTarget={dropTarget === idx && dragIndex !== idx}
+                editingNameId={editingNameId}
+                editingNameValue={editingNameValue}
+                editingDelayId={editingDelayId}
+                editingDelayValue={editingDelayValue}
+                onSelect={onSelectSprite}
+                onRemove={onRemove}
+                onDuplicate={onDuplicate}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, idx)}
+                onDrop={handleDrop}
                 onDragEnd={handleDragEnd}
-                className={`relative group shrink-0 rounded p-0.5 transition-colors cursor-pointer ${
-                  editingBankIndex === idx
-                    ? 'border-2 border-accent'
-                    : 'border border-border-default hover:border-accent'
-                } ${dragIndex === idx ? 'opacity-40' : ''} ${
-                  dropTarget === idx && dragIndex !== idx ? 'ring-2 ring-accent' : ''
-                }`}
-                style={{
-                  background: `
-                    repeating-conic-gradient(#1a1a2e 0% 25%, #0f0f1e 0% 50%)
-                    50% / 8px 8px
-                  `,
-                }}
-                title={`${sprite.name} (click to edit, double-click name to rename)`}
-                onClick={() => onSelectSprite(idx)}
-              >
-                <SpriteThumb sprite={sprite} />
-
-                {/* Name / rename input */}
-                <span
-                  className="absolute bottom-0 left-0 right-0 bg-black/70 text-[9px] text-text-muted px-1 truncate text-center"
-                  onDoubleClick={(e) => {
-                    e.stopPropagation()
-                    startRename(sprite.id, sprite.name)
-                  }}
-                >
-                  {editingNameId === sprite.id ? (
-                    <input
-                      autoFocus
-                      value={editingNameValue}
-                      onChange={(e) => setEditingNameValue(e.target.value)}
-                      onBlur={commitRename}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitRename()
-                        if (e.key === 'Escape') cancelRename()
-                        e.stopPropagation()
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-full bg-transparent text-white text-[9px] text-center outline-none border-b border-accent"
-                    />
-                  ) : (
-                    sprite.name
-                  )}
-                </span>
-
-                {/* Per-frame delay badge */}
-                <span
-                  className="absolute top-0 left-0 bg-black/70 text-[8px] text-text-muted px-0.5 cursor-pointer hover:text-text-primary"
-                  title="Frame delay (ms) — double-click to edit"
-                  onDoubleClick={(e) => {
-                    e.stopPropagation()
-                    setEditingDelayId(sprite.id)
-                    setEditingDelayValue(String(sprite.delay ?? ''))
-                  }}
-                >
-                  {editingDelayId === sprite.id ? (
-                    <input
-                      autoFocus
-                      value={editingDelayValue}
-                      onChange={(e) => setEditingDelayValue(e.target.value)}
-                      onBlur={() => {
-                        const ms = parseInt(editingDelayValue)
-                        onSetDelay(sprite.id, isNaN(ms) || ms <= 0 ? undefined : ms)
-                        setEditingDelayId(null)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const ms = parseInt(editingDelayValue)
-                          onSetDelay(sprite.id, isNaN(ms) || ms <= 0 ? undefined : ms)
-                          setEditingDelayId(null)
-                        }
-                        if (e.key === 'Escape') setEditingDelayId(null)
-                        e.stopPropagation()
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-10 bg-transparent text-white text-[8px] outline-none border-b border-accent"
-                      placeholder="ms"
-                    />
-                  ) : sprite.delay ? `${sprite.delay}ms` : '·'}
-                </span>
-
-                {/* Duplicate button */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDuplicate(sprite.id) }}
-                  className="absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full bg-accent text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                  title="Duplicate"
-                  aria-label={`Duplicate ${sprite.name}`}
-                >
-                  <Copy size={9} />
-                </button>
-
-                {/* Remove button */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); onRemove(sprite.id) }}
-                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                  aria-label={`Remove ${sprite.name}`}
-                >
-                  <X size={10} />
-                </button>
-              </div>
+                onStartRename={startRename}
+                onSetEditingNameValue={setEditingNameValue}
+                onCommitRename={commitRename}
+                onCancelRename={cancelRename}
+                onStartDelayEdit={handleStartDelayEdit}
+                onSetEditingDelayValue={setEditingDelayValue}
+                onCommitDelay={handleCommitDelay}
+                onCancelDelay={handleCancelDelay}
+                onSetDelay={onSetDelay}
+              />
             ))
           )}
         </div>

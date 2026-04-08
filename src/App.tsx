@@ -11,6 +11,7 @@ import { AIImportModal } from './components/AIImportModal'
 import { LayerPanel } from './components/LayerPanel'
 import { ResizeModal } from './components/ResizeModal'
 import { CustomBrushModal } from './components/CustomBrushModal'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { usePalette } from './hooks/usePalette'
 import { exportProject, exportCatPixProject, type ExportOptions } from './utils/exportProject'
 import { exportGif, type GifExportOptions } from './utils/exportGif'
@@ -65,7 +66,8 @@ function App() {
 
 
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const compositorCanvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'))
+  const compositorCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  if (!compositorCanvasRef.current) compositorCanvasRef.current = document.createElement('canvas')
 
   // Active layer's imageData for the pixel editor
   const activeLayer = useMemo(() => layers.find((l) => l.id === activeLayerId) ?? null, [layers, activeLayerId])
@@ -74,7 +76,7 @@ function App() {
   // Flattened composite of all layers for display
   const compositeTileData = useMemo(() => {
     if (layers.length === 0) return tileData
-    return flattenLayers(layers, compositorCanvasRef.current)
+    return flattenLayers(layers, compositorCanvasRef.current ?? undefined)
   }, [layers, tileData])
 
   const { colors: palette, truncated: paletteTruncated, totalUnique: paletteTotalUnique } = usePalette(image)
@@ -297,10 +299,20 @@ function App() {
     dispatch({ type: 'SET_SPRITE_DELAY', id, delay })
   }, [])
 
+  // Layer panel callbacks (stable refs for memo)
+  const handleAddLayer = useCallback(() => dispatch({ type: 'ADD_LAYER' }), [])
+  const handleRemoveLayer = useCallback((id: string) => dispatch({ type: 'REMOVE_LAYER', layerId: id }), [])
+  const handleSetActiveLayer = useCallback((id: string) => dispatch({ type: 'SET_ACTIVE_LAYER', layerId: id }), [])
+  const handleSetLayerVisibility = useCallback((id: string, visible: boolean) => dispatch({ type: 'SET_LAYER_VISIBILITY', layerId: id, visible }), [])
+  const handleSetLayerOpacity = useCallback((id: string, opacity: number) => dispatch({ type: 'SET_LAYER_OPACITY', layerId: id, opacity }), [])
+  const handleSetLayerName = useCallback((id: string, name: string) => dispatch({ type: 'SET_LAYER_NAME', layerId: id, name }), [])
+  const handleSetLayerBlendMode = useCallback((id: string, blendMode: LayerBlendMode) => dispatch({ type: 'SET_LAYER_BLEND_MODE', layerId: id, blendMode }), [])
+  const handleReorderLayers = useCallback((from: number, to: number) => dispatch({ type: 'REORDER_LAYERS', fromIndex: from, toIndex: to }), [])
+
   const handleMergeVisibleLayers = useCallback(() => {
     const visible = layers.filter((l) => l.visible)
     if (visible.length === 0) return
-    const merged = flattenLayers(visible, compositorCanvasRef.current)
+    const merged = flattenLayers(visible, compositorCanvasRef.current ?? undefined)
     const newLayer = createLayerFromImageData(merged, 'Merged')
     dispatch({ type: 'MERGE_VISIBLE_LAYERS', mergedLayer: newLayer })
     dispatch({ type: 'COMMIT_STROKE' })
@@ -545,41 +557,43 @@ function App() {
             {/* Right panel */}
             <div className="w-72 bg-bg-panel border-l border-border-default flex flex-col overflow-y-auto">
               <PropertiesPanel image={image} gridSize={gridSize} />
-              <PixelEditor
-                tileData={activeLayerData ?? tileData}
-                compositeData={compositeTileData}
-                activeTool={activeTool}
-                activeColor={activeColor}
-                brushSize={brushSize}
-                brushShape={brushShape}
-                customBrush={customBrush}
-                snapToPalette={snapToPalette}
-                palette={palette}
-                selectionMode={selectionMode}
-                magicTolerance={magicTolerance}
-                onionSkinData={onionSkinData}
-                isEditingBank={editingBankIndex !== null}
-                onClear={handleClearTile}
-                onTileDataChange={handleTileDataChange}
-                onStrokeCommit={handleStrokeCommit}
-                onColorChange={(color) => dispatch({ type: 'SET_ACTIVE_COLOR', color })}
-                onToolChange={(tool) => dispatch({ type: 'SET_ACTIVE_TOOL', tool })}
-                onSaveToBank={handleSaveToBank}
-                onUpdateInBank={handleUpdateInBank}
-                onOutlineEffect={handleOutlineEffect}
-                onOpenResize={() => dispatch({ type: 'SET_SHOW_RESIZE_MODAL', show: true })}
-              />
+              <ErrorBoundary componentName="Pixel Editor">
+                <PixelEditor
+                  tileData={activeLayerData ?? tileData}
+                  compositeData={compositeTileData}
+                  activeTool={activeTool}
+                  activeColor={activeColor}
+                  brushSize={brushSize}
+                  brushShape={brushShape}
+                  customBrush={customBrush}
+                  snapToPalette={snapToPalette}
+                  palette={palette}
+                  selectionMode={selectionMode}
+                  magicTolerance={magicTolerance}
+                  onionSkinData={onionSkinData}
+                  isEditingBank={editingBankIndex !== null}
+                  onClear={handleClearTile}
+                  onTileDataChange={handleTileDataChange}
+                  onStrokeCommit={handleStrokeCommit}
+                  onColorChange={(color) => dispatch({ type: 'SET_ACTIVE_COLOR', color })}
+                  onToolChange={(tool) => dispatch({ type: 'SET_ACTIVE_TOOL', tool })}
+                  onSaveToBank={handleSaveToBank}
+                  onUpdateInBank={handleUpdateInBank}
+                  onOutlineEffect={handleOutlineEffect}
+                  onOpenResize={() => dispatch({ type: 'SET_SHOW_RESIZE_MODAL', show: true })}
+                />
+              </ErrorBoundary>
               <LayerPanel
                 layers={layers}
                 activeLayerId={activeLayerId}
-                onAddLayer={() => dispatch({ type: 'ADD_LAYER' })}
-                onRemoveLayer={(id) => dispatch({ type: 'REMOVE_LAYER', layerId: id })}
-                onSetActiveLayer={(id) => dispatch({ type: 'SET_ACTIVE_LAYER', layerId: id })}
-                onSetVisibility={(id, visible) => dispatch({ type: 'SET_LAYER_VISIBILITY', layerId: id, visible })}
-                onSetOpacity={(id, opacity) => dispatch({ type: 'SET_LAYER_OPACITY', layerId: id, opacity })}
-                onSetName={(id, name) => dispatch({ type: 'SET_LAYER_NAME', layerId: id, name })}
-                onSetBlendMode={(id, blendMode: LayerBlendMode) => dispatch({ type: 'SET_LAYER_BLEND_MODE', layerId: id, blendMode })}
-                onReorder={(from, to) => dispatch({ type: 'REORDER_LAYERS', fromIndex: from, toIndex: to })}
+                onAddLayer={handleAddLayer}
+                onRemoveLayer={handleRemoveLayer}
+                onSetActiveLayer={handleSetActiveLayer}
+                onSetVisibility={handleSetLayerVisibility}
+                onSetOpacity={handleSetLayerOpacity}
+                onSetName={handleSetLayerName}
+                onSetBlendMode={handleSetLayerBlendMode}
+                onReorder={handleReorderLayers}
                 onMergeVisible={handleMergeVisibleLayers}
               />
               <AnimationPreview sprites={sprites} />
@@ -608,21 +622,25 @@ function App() {
             />
           )}
           {showAIImportModal && (
-            <AIImportModal
-              gridSize={gridSize}
-              paletteColors={palette}
-              onImport={handleAIImport}
-              onLoadAsTileset={handleAILoadAsTileset}
-              onClose={() => dispatch({ type: 'SET_SHOW_AI_IMPORT_MODAL', show: false })}
-            />
+            <ErrorBoundary componentName="AI Import">
+              <AIImportModal
+                gridSize={gridSize}
+                paletteColors={palette}
+                onImport={handleAIImport}
+                onLoadAsTileset={handleAILoadAsTileset}
+                onClose={() => dispatch({ type: 'SET_SHOW_AI_IMPORT_MODAL', show: false })}
+              />
+            </ErrorBoundary>
           )}
           {showExportModal && sprites.length > 0 && (
-            <ExportModal
-              sprites={sprites}
-              onExport={handleExport}
-              onExportGif={handleExportGif}
-              onClose={() => dispatch({ type: 'SET_SHOW_EXPORT_MODAL', show: false })}
-            />
+            <ErrorBoundary componentName="Export">
+              <ExportModal
+                sprites={sprites}
+                onExport={handleExport}
+                onExportGif={handleExportGif}
+                onClose={() => dispatch({ type: 'SET_SHOW_EXPORT_MODAL', show: false })}
+              />
+            </ErrorBoundary>
           )}
           {showResizeModal && tileData && (
             <ResizeModal

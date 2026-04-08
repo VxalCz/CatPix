@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback, memo } from 'react'
 import { Eye, EyeOff, Trash2, Plus, Layers, GitMerge } from 'lucide-react'
 import type { Layer, LayerBlendMode } from '../state/layers'
 import { MAX_LAYERS } from '../state/layers'
@@ -33,6 +33,158 @@ interface LayerPanelProps {
   onMergeVisible: () => void
 }
 
+interface LayerRowProps {
+  layer: Layer
+  realIndex: number
+  isActive: boolean
+  isDragged: boolean
+  isDropTarget: boolean
+  canDelete: boolean
+  editingNameId: string | null
+  editingNameValue: string
+  onSetActiveLayer: (id: string) => void
+  onSetVisibility: (id: string, visible: boolean) => void
+  onSetOpacity: (id: string, opacity: number) => void
+  onSetBlendMode: (id: string, blendMode: LayerBlendMode) => void
+  onRemoveLayer: (id: string) => void
+  onDragStart: (index: number) => void
+  onDragOver: (e: React.DragEvent, index: number) => void
+  onDragLeave: () => void
+  onDrop: (e: React.DragEvent, index: number) => void
+  onDragEnd: () => void
+  onStartRename: (id: string, name: string) => void
+  onSetEditingNameValue: (value: string) => void
+  onCommitRename: () => void
+  onCancelRename: () => void
+}
+
+const LayerRow = memo(function LayerRow({
+  layer,
+  realIndex,
+  isActive,
+  isDragged,
+  isDropTarget,
+  canDelete,
+  editingNameId,
+  editingNameValue,
+  onSetActiveLayer,
+  onSetVisibility,
+  onSetOpacity,
+  onSetBlendMode,
+  onRemoveLayer,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  onStartRename,
+  onSetEditingNameValue,
+  onCommitRename,
+  onCancelRename,
+}: LayerRowProps) {
+  return (
+    <div
+      draggable
+      onDragStart={() => onDragStart(realIndex)}
+      onDragOver={(e) => onDragOver(e, realIndex)}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => onDrop(e, realIndex)}
+      onDragEnd={onDragEnd}
+      onClick={() => onSetActiveLayer(layer.id)}
+      className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors ${
+        isActive
+          ? 'bg-accent/20 border border-accent/50'
+          : 'bg-bg-hover border border-transparent hover:border-border-default'
+      } ${isDragged ? 'opacity-40' : ''} ${
+        isDropTarget ? 'ring-1 ring-accent' : ''
+      }`}
+    >
+      {/* Visibility toggle */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onSetVisibility(layer.id, !layer.visible)
+        }}
+        className="p-0.5 text-text-secondary hover:text-text-primary"
+        aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
+      >
+        {layer.visible ? <Eye size={12} /> : <EyeOff size={12} />}
+      </button>
+
+      {/* Layer name */}
+      <span
+        className="flex-1 truncate text-text-primary"
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          onStartRename(layer.id, layer.name)
+        }}
+      >
+        {editingNameId === layer.id ? (
+          <input
+            autoFocus
+            value={editingNameValue}
+            onChange={(e) => onSetEditingNameValue(e.target.value)}
+            onBlur={onCommitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onCommitRename()
+              if (e.key === 'Escape') onCancelRename()
+              e.stopPropagation()
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full bg-transparent text-text-primary text-[11px] outline-none border-b border-accent"
+          />
+        ) : (
+          layer.name
+        )}
+      </span>
+
+      {/* Opacity */}
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={Math.round(layer.opacity * 100)}
+        onChange={(e) => {
+          e.stopPropagation()
+          onSetOpacity(layer.id, Number(e.target.value) / 100)
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-12 accent-accent"
+        title={`Opacity: ${Math.round(layer.opacity * 100)}%`}
+      />
+
+      {/* Blend mode */}
+      <select
+        value={layer.blendMode}
+        onChange={(e) => {
+          e.stopPropagation()
+          onSetBlendMode(layer.id, e.target.value as LayerBlendMode)
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="text-[9px] bg-bg-primary border border-border-default text-text-secondary rounded px-0.5 py-0.5 cursor-pointer focus:outline-none focus:border-accent"
+        title="Blend mode"
+      >
+        {BLEND_MODES.map((m) => (
+          <option key={m.value} value={m.value}>{m.label}</option>
+        ))}
+      </select>
+
+      {/* Delete */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onRemoveLayer(layer.id)
+        }}
+        disabled={!canDelete}
+        className="p-0.5 text-text-muted hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
+        aria-label={`Delete ${layer.name}`}
+      >
+        <Trash2 size={12} />
+      </button>
+    </div>
+  )
+})
+
 export function LayerPanel({
   layers,
   activeLayerId,
@@ -56,6 +208,33 @@ export function LayerPanel({
   } = useEditableField(onSetName)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<number | null>(null)
+
+  const handleDragStart = useCallback((index: number) => {
+    setDragIndex(index)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    setDropTarget(index)
+  }, [])
+
+  const handleDragLeave = useCallback(() => {
+    setDropTarget(null)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent, toIndex: number) => {
+    e.preventDefault()
+    if (dragIndex !== null && dragIndex !== toIndex) {
+      onReorder(dragIndex, toIndex)
+    }
+    setDragIndex(null)
+    setDropTarget(null)
+  }, [dragIndex, onReorder])
+
+  const handleDragEnd = useCallback(() => {
+    setDragIndex(null)
+    setDropTarget(null)
+  }, [])
 
   if (layers.length === 0) return null
 
@@ -96,119 +275,32 @@ export function LayerPanel({
       <div className="space-y-0.5">
         {displayLayers.map((layer) => {
           const realIndex = layers.indexOf(layer)
-          const isActive = layer.id === activeLayerId
-
           return (
-            <div
+            <LayerRow
               key={layer.id}
-              draggable
-              onDragStart={() => setDragIndex(realIndex)}
-              onDragOver={(e) => {
-                e.preventDefault()
-                setDropTarget(realIndex)
-              }}
-              onDragLeave={() => setDropTarget(null)}
-              onDrop={(e) => {
-                e.preventDefault()
-                if (dragIndex !== null && dragIndex !== realIndex) {
-                  onReorder(dragIndex, realIndex)
-                }
-                setDragIndex(null)
-                setDropTarget(null)
-              }}
-              onDragEnd={() => { setDragIndex(null); setDropTarget(null) }}
-              onClick={() => onSetActiveLayer(layer.id)}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors ${
-                isActive
-                  ? 'bg-accent/20 border border-accent/50'
-                  : 'bg-bg-hover border border-transparent hover:border-border-default'
-              } ${dragIndex === realIndex ? 'opacity-40' : ''} ${
-                dropTarget === realIndex && dragIndex !== realIndex ? 'ring-1 ring-accent' : ''
-              }`}
-            >
-              {/* Visibility toggle */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSetVisibility(layer.id, !layer.visible)
-                }}
-                className="p-0.5 text-text-secondary hover:text-text-primary"
-                aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
-              >
-                {layer.visible ? <Eye size={12} /> : <EyeOff size={12} />}
-              </button>
-
-              {/* Layer name */}
-              <span
-                className="flex-1 truncate text-text-primary"
-                onDoubleClick={(e) => {
-                  e.stopPropagation()
-                  startRename(layer.id, layer.name)
-                }}
-              >
-                {editingNameId === layer.id ? (
-                  <input
-                    autoFocus
-                    value={editingNameValue}
-                    onChange={(e) => setEditingNameValue(e.target.value)}
-                    onBlur={commitRename}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitRename()
-                      if (e.key === 'Escape') cancelRename()
-                      e.stopPropagation()
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full bg-transparent text-text-primary text-[11px] outline-none border-b border-accent"
-                  />
-                ) : (
-                  layer.name
-                )}
-              </span>
-
-              {/* Opacity */}
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={Math.round(layer.opacity * 100)}
-                onChange={(e) => {
-                  e.stopPropagation()
-                  onSetOpacity(layer.id, Number(e.target.value) / 100)
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="w-12 accent-accent"
-                title={`Opacity: ${Math.round(layer.opacity * 100)}%`}
-              />
-
-              {/* Blend mode */}
-              <select
-                value={layer.blendMode}
-                onChange={(e) => {
-                  e.stopPropagation()
-                  onSetBlendMode(layer.id, e.target.value as LayerBlendMode)
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="text-[9px] bg-bg-primary border border-border-default text-text-secondary rounded px-0.5 py-0.5 cursor-pointer focus:outline-none focus:border-accent"
-                title="Blend mode"
-              >
-                {BLEND_MODES.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
-
-              {/* Delete */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onRemoveLayer(layer.id)
-                }}
-                disabled={layers.length <= 1}
-                className="p-0.5 text-text-muted hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
-                aria-label={`Delete ${layer.name}`}
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
+              layer={layer}
+              realIndex={realIndex}
+              isActive={layer.id === activeLayerId}
+              isDragged={dragIndex === realIndex}
+              isDropTarget={dropTarget === realIndex && dragIndex !== realIndex}
+              canDelete={layers.length > 1}
+              editingNameId={editingNameId}
+              editingNameValue={editingNameValue}
+              onSetActiveLayer={onSetActiveLayer}
+              onSetVisibility={onSetVisibility}
+              onSetOpacity={onSetOpacity}
+              onSetBlendMode={onSetBlendMode}
+              onRemoveLayer={onRemoveLayer}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onDragEnd={handleDragEnd}
+              onStartRename={startRename}
+              onSetEditingNameValue={setEditingNameValue}
+              onCommitRename={commitRename}
+              onCancelRename={cancelRename}
+            />
           )
         })}
       </div>
